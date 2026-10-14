@@ -2,50 +2,64 @@
 
 **Telemetry Intelligence** — local-first UAV flight analysis with optional GPT-4o mini diagnostics.
 
-| Phase | Capability |
-|-------|------------|
-| 1 | Upload & validate IMU / ATT / BARO |
-| 2 | Conservative 12-feature LSTM scores + flags |
-| 3 | Event grouping, Plotly dashboard, JSON/CSV reports |
-| 4 | GPT-4o mini diagnostic report + flight-specific chat |
+| Layer | Stack |
+|-------|--------|
+| Frontend | Next.js (App Router) |
+| Backend | FastAPI wrapping `src/` ML pipeline |
+| Model | Conservative 12-feature LSTM AE in `uav_model/` |
 
 ## Install & run
 
+### Backend
+
 ```bash
 cd "/Users/purvansh/Desktop/ML Projects/UAV Telemetry"
-
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Detector artifacts live in ./uav_model/ (see ARTIFACTS.md)
-# Edit .env and set OPENAI_API_KEY=sk-... for AI diagnostics
-
-pytest -q
-streamlit run app.py
+# Edit .env → OPENAI_API_KEY=sk-... (optional, for AI diagnostics)
+uvicorn backend.main:app --reload --port 8000
 ```
 
+API docs: http://127.0.0.1:8000/docs
 
-## Phase 4 — AI diagnostics
+### Frontend
 
-- **LLM role:** interpretation only. Does not change scores, flags, threshold, or event grouping.
-- **Model:** `OPENAI_MODEL` (default `gpt-4o-mini`).
-- **Evidence:** compact pack from the Phase 3 report — detector config (exact 12 features), events, recon-error evidence, nearby baseline windows, data-quality warnings, and explicit BARO exclusion.
-- **Outputs:** Pydantic-validated diagnostic JSON (`observed_facts` / hypotheses / unknowns / checks) plus optional attachment as `ai_analysis` on the flight report.
-- **Chat:** bound to the active `flight_id` in Streamlit session state; switching flights resets chat.
-- **Failures:** missing key / API errors leave detector results and exports available.
+```bash
+cd frontend
+npm install
+# NEXT_PUBLIC_API_URL defaults to http://127.0.0.1:8000 via .env.local
+npm run dev
+```
 
-Routine `pytest` runs **mock** the OpenAI client — no paid calls.
+UI: http://localhost:3000
 
-## Event grouping (unchanged)
+### Tests
 
-Merge flagged windows in the same session when intervals overlap or gap ≤ `max_gap_s` (default 1.5 s). Duration = `max(t_end)−min(t_start)`. Never merge across sessions.
+```bash
+source .venv/bin/activate
+pytest -q
+```
 
-## JSON report schema `1.0`
+## Workflow
 
-Detector summary + events + `data_quality_warnings` + `ai_analysis` (`null` or diagnostic object).
+1. **Upload** IMU / ATT / BARO CSVs or a ZIP → validated flight on disk (`data/flights/`)
+2. **Analyze** → windows, scores, events, Plotly charts, JSON/CSV exports
+3. **AI Diagnostics** → evidence pack → GPT-4o mini (scores/flags unchanged)
+4. **Chat** → flight-bound follow-ups
+
+## Environment
+
+See `.env.example`:
+
+- `OPENAI_API_KEY` / `OPENAI_MODEL` — Phase 4 AI (server-side only)
+- `UAV_MODEL_DIR` — default `./uav_model`
+- `DATA_DIR` — default `./data/flights`
+- `CORS_ORIGINS` — default `http://localhost:3000,http://127.0.0.1:3000`
 
 ## Limitations
 
 - AI hypotheses are not certified root causes.
 - Do not commit `.env` or API keys.
+- BARO altitude/pressure are excluded from LSTM scoring.

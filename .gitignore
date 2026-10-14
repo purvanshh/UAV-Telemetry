@@ -22,10 +22,16 @@ build/
 .coverage
 htmlcov/
 
-# Streamlit / local outputs
-.streamlit/secrets.toml
+# Local outputs / flight store
 outputs/*
 !outputs/.gitkeep
+data/flights/*
+!data/flights/.gitkeep
+
+# Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
 
 # OS / IDE
 .DS_Store
