@@ -5,11 +5,13 @@ env/
 
 # Environment / secrets
 .env
-.env.local
+.env.*
+!.env.example
 *.pem
 
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
@@ -22,16 +24,17 @@ build/
 .coverage
 htmlcov/
 
-# Local outputs / flight store
-outputs/*
+# Local outputs / flight store (never commit uploaded telemetry)
+outputs/
 !outputs/.gitkeep
-data/flights/*
+data/flights/
 !data/flights/.gitkeep
 
 # Next.js
 frontend/node_modules/
 frontend/.next/
 frontend/out/
+frontend/.env.local
 
 # OS / IDE
 .DS_Store

@@ -93,6 +93,7 @@ export default function AiDiagnosticsPage() {
       <AppNav flightId={flightId} />
       <main>
         <section className="hero">
+          <span className="kicker">Evidence memo</span>
           <h1>AI Diagnostics</h1>
           <p>
             GPT-4o mini interprets detector evidence only. It does not change scores,
@@ -109,6 +110,8 @@ export default function AiDiagnosticsPage() {
           </div>
         )}
 
+        <div className="ai-split">
+        <div>
         <section className="panel">
           <h2>Evidence pipeline trace</h2>
           {trace ? <pre className="trace">{trace}</pre> : <p className="muted">Analyze the flight first.</p>}
@@ -191,8 +194,9 @@ export default function AiDiagnosticsPage() {
             ))}
           </section>
         )}
+        </div>
 
-        <section className="panel">
+        <section className="panel chat-panel">
           <h2>Flight chat</h2>
           <div className="chat-log">
             {messages.map((m, i) => (
@@ -221,6 +225,7 @@ export default function AiDiagnosticsPage() {
             </button>
           </form>
         </section>
+        </div>
 
         <Link className="btn" href={`/flights/${flightId}`}>
           Back to analysis

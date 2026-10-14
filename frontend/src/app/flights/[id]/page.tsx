@@ -114,6 +114,7 @@ export default function FlightAnalysisPage() {
       <AppNav flightId={flightId} />
       <main>
         <section className="hero">
+          <span className="kicker">Reconstruction</span>
           <h1>Flight analysis</h1>
           <p className="mono">{flightId}</p>
         </section>

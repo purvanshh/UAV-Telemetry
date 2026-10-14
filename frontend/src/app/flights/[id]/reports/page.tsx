@@ -37,7 +37,8 @@ export default function ReportsPage() {
       <AppNav flightId={flightId} />
       <main>
         <section className="hero">
-          <h1>Reports & exports</h1>
+          <span className="kicker">Archive</span>
+          <h1>Reports</h1>
           <p className="mono">{flightId}</p>
         </section>
 
