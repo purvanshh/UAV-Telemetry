@@ -1,0 +1,24 @@
+{
+  "architecture": "LSTMAE",
+  "n_features": 12,
+  "hidden_dim": 48,
+  "latent_dim": 12,
+  "num_layers": 1,
+  "win_samples": 30,
+  "stride_samples": 15,
+  "features": [
+    "gyro_x",
+    "gyro_y",
+    "gyro_z",
+    "acc_x",
+    "acc_y",
+    "acc_z",
+    "roll",
+    "pitch",
+    "yaw_sin",
+    "yaw_cos",
+    "roll_res",
+    "pitch_res"
+  ],
+  "device_at_inference": "cpu"
+}

@@ -1,0 +1,7 @@
+{
+  "variant": "conservative",
+  "lstm_ae": 4.034964084625244,
+  "iforest": 0.4605058052936019,
+  "quantile_used": 0.995,
+  "calibrated_on": "validation flights only"
+}
