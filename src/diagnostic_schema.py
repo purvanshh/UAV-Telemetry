@@ -62,7 +62,7 @@ class ChatAnswer(BaseModel):
     caveats: List[str] = Field(default_factory=list)
     insufficient_evidence: bool = False
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     @field_validator("answer")
     @classmethod
@@ -70,6 +70,22 @@ class ChatAnswer(BaseModel):
         if not str(v).strip():
             raise ValueError("answer must be non-empty")
         return v.strip()
+
+    @field_validator("caveats", "referenced_event_ids", mode="before")
+    @classmethod
+    def _coerce_str_list(cls, v: Any) -> List[str]:
+        """Models often return a single string instead of a list."""
+        if v is None:
+            return []
+        if isinstance(v, str):
+            text = v.strip()
+            return [text] if text else []
+        if isinstance(v, (int, float)):
+            return [str(v)]
+        return v
+
+    def to_json_dict(self) -> Dict[str, Any]:
+        return self.model_dump(mode="json")
 
 
 def validate_diagnostic(data: Union[Dict[str, Any], DiagnosticReport]) -> DiagnosticReport:

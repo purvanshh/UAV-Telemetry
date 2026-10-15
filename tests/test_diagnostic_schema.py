@@ -88,6 +88,22 @@ def test_chat_answer():
     assert "IMU/ATT" in ans.answer
 
 
+def test_chat_answer_accepts_string_caveats():
+    ans = validate_chat_answer(
+        {
+            "flight_id": "f1",
+            "answer": "Check the gyro mounting.",
+            "referenced_event_ids": "event-001",
+            "caveats": "This is a hypothesis, not a confirmed fault.",
+            "insufficient_evidence": False,
+            "extra_field": "ignored",
+        }
+    )
+    assert ans.caveats == ["This is a hypothesis, not a confirmed fault."]
+    assert ans.referenced_event_ids == ["event-001"]
+    assert ans.to_json_dict()["answer"] == "Check the gyro mounting."
+
+
 def test_empty_summary_rejected():
     with pytest.raises(ValidationError):
         DiagnosticReport(
