@@ -105,6 +105,7 @@ Artifacts expected in `uav_model/`:
 - Model: `gpt-4o-mini` by default (`OPENAI_MODEL`)
 - Key: `OPENAI_API_KEY` in project `.env` (server-side only; never exposed to the browser)
 - The LLM receives detector evidence and the prior diagnostic JSON for chat. It must not invent telemetry, alter scores/flags, or treat hypotheses as verified faults.
+- Output is written for the pilot, not an engineer: everyday words ("unusualness score", "alert level", "unusual stretch"), no ML/statistics jargon, and every number anchored against the alert level. The detector vocabulary and guardrails are enforced by `src/diagnostic_prompt.py`.
 - Without a key, upload / analyze / export still work; Generate diagnostic and chat stay disabled.
 
 ---

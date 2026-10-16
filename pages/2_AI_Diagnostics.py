@@ -12,6 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+_CONFIDENCE_PLAIN = {
+    "high": "stronger possibility",
+    "medium": "possible",
+    "low": "weaker possibility",
+}
+
+
+def _confidence_label(value: str) -> str:
+    return _CONFIDENCE_PLAIN.get(value, value)
+
 from src.chat_service import ask_followup
 from src.diagnostic_trace import build_diagnostic_trace, format_diagnostic_trace
 from src.evidence_builder import build_evidence_pack
@@ -41,12 +51,12 @@ from src.session_state import (
 st.set_page_config(page_title="AI Diagnostics · UAV Sentinel", layout="wide")
 
 st.title("AI Diagnostics")
-st.caption("Phase 4 · GPT-4o mini interpretation layer (detector scores unchanged)")
+st.caption("Plain-language explanations — detector scores and flags are never changed")
 
 st.info(
-    "The LSTM remains the source of anomaly scores and flags. "
-    "GPT-4o mini only interprets the Phase 3 evidence pack. "
-    "Hypotheses are not verified faults."
+    "The automatic check is the only source of scores and flags; the assistant "
+    "just explains them in everyday words. Its possible causes are unverified — "
+    "they are not confirmed faults."
 )
 
 if not has_flight(st.session_state):
@@ -81,13 +91,15 @@ _preview_pack = build_evidence_pack(
 _trace = build_diagnostic_trace(
     report, windows=windows, evidence_pack=_preview_pack
 )
-with st.expander("Evidence pipeline trace", expanded=report.summary.event_count == 0):
+with st.expander("Evidence used by the assistant (technical view)", expanded=report.summary.event_count == 0):
+    st.caption("The check's numbers behind the explanation — kept for transparency.")
     st.code(format_diagnostic_trace(_trace), language="text")
     if report.summary.flagged_windows == 0:
         st.caption(
-            "No windows exceeded the saved threshold — this is a valid "
-            "`no_anomaly` outcome. AI will receive score statistics and "
-            "unflagged high-score context (not fabricated events)."
+            "No 3-second moment of this flight crossed the alert level — a valid "
+            "'nothing unusual' result. The assistant receives the score story and "
+            "the highest scores (all still below the alert level); it never "
+            "fabricates events."
         )
 
 if not api_configured():
@@ -172,34 +184,34 @@ if diagnostic is None:
     st.write("No AI report yet. Generate one above when an API key is configured.")
 else:
     if diagnostic.insufficient_evidence:
-        st.warning("Insufficient evidence flagged by the assistant.")
+        st.warning("The assistant doesn't have enough evidence to point to a specific problem yet.")
     st.markdown(f"**Summary:** {diagnostic.summary}")
     if diagnostic.overall_limitations:
-        with st.expander("Overall limitations", expanded=False):
+        with st.expander("Limitations", expanded=False):
             for item in diagnostic.overall_limitations:
                 st.write(f"- {item}")
     for finding in diagnostic.findings:
         with st.expander(f"Finding · {finding.event_id}", expanded=True):
-            st.write("**Observed facts**")
+            st.write("**What the system observed**")
             for f in finding.observed_facts or ["(none)"]:
                 st.write(f"- {f}")
-            st.write("**Possible causes**")
+            st.write("**What it might mean**")
             if not finding.possible_causes:
                 st.write("- (none)")
             for cause in finding.possible_causes:
                 st.markdown(
-                    f"- **{cause.hypothesis}** · confidence `{cause.confidence}`"
+                    f"- **{cause.hypothesis}** · {_confidence_label(cause.confidence)}"
                 )
                 if cause.supporting_evidence:
-                    st.caption("Supporting: " + "; ".join(cause.supporting_evidence))
+                    st.caption("Signs for: " + "; ".join(cause.supporting_evidence))
                 if cause.contradicting_evidence:
                     st.caption(
-                        "Contradicting: " + "; ".join(cause.contradicting_evidence)
+                        "Signs against: " + "; ".join(cause.contradicting_evidence)
                     )
-            st.write("**Unknowns**")
+            st.write("**What it can't tell you**")
             for u in finding.unknowns or ["(none)"]:
                 st.write(f"- {u}")
-            st.write("**Recommended checks**")
+            st.write("**What you can check**")
             for c in finding.recommended_checks or ["(none)"]:
                 st.write(f"- {c}")
 
@@ -225,8 +237,8 @@ else:
 # —— Chat ————————————————————————————————————————————————————————————————————
 st.subheader("Flight chat")
 st.caption(
-    "Conversation is bound to this flight ID. Switching/resetting flights "
-    "clears chat. Prior AI hypotheses are not treated as telemetry facts."
+    "This chat belongs to this flight. Switching or resetting flights clears it. "
+    "Earlier possibilities the assistant mentioned are not treated as facts."
 )
 
 for msg in chat_state.get("messages") or []:
@@ -260,7 +272,7 @@ if prompt:
                     if answer.caveats:
                         st.caption("Caveats: " + "; ".join(answer.caveats))
                     if answer.insufficient_evidence:
-                        st.caption("Assistant marked insufficient evidence.")
+                        st.caption("Not enough evidence for a specific answer to this one.")
                 except LLMError as exc:
                     st.error(str(exc))
                 except ValueError as exc:

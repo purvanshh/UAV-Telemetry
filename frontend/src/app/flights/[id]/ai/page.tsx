@@ -8,6 +8,9 @@ import { api, ApiError, AiStatus, Diagnostic, setLastFlightId } from "@/lib/api"
 
 type Msg = { role: string; content: string };
 
+const confidenceLabel = (c: string): string =>
+  c === "high" ? "stronger possibility" : c === "medium" ? "possible" : "weaker possibility";
+
 export default function AiDiagnosticsPage() {
   const params = useParams();
   const flightId = String(params.id || "");
@@ -96,8 +99,9 @@ export default function AiDiagnosticsPage() {
           <span className="kicker">Evidence memo</span>
           <h1>AI Diagnostics</h1>
           <p>
-            GPT-4o mini interprets detector evidence only. It does not change scores,
-            flags, or events. BARO is excluded from LSTM detection.
+            The assistant explains the automatic check results in plain words for the pilot.
+            It never changes scores, flags, or events, and it only covers movement and tilt
+            signals — not GPS, battery, motors, or altitude.
           </p>
         </section>
 
@@ -113,7 +117,11 @@ export default function AiDiagnosticsPage() {
         <div className="ai-split">
         <div>
         <section className="panel">
-          <h2>Evidence pipeline trace</h2>
+          <h2>Evidence used by the assistant</h2>
+          <p className="muted">
+            Technical view of the numbers behind the explanation, kept for transparency.
+            The diagnostic and chat below translate this into plain words.
+          </p>
           {trace ? <pre className="trace">{trace}</pre> : <p className="muted">Analyze the flight first.</p>}
         </section>
 
@@ -153,7 +161,9 @@ export default function AiDiagnosticsPage() {
           <section className="panel">
             <h2>AI diagnostic report</h2>
             {diagnostic.insufficient_evidence && (
-              <div className="alert alert-warn">Insufficient evidence for a specific physical fault.</div>
+              <div className="alert alert-warn">
+                The system doesn&apos;t have enough evidence to point to a specific problem yet.
+              </div>
             )}
             <p>{diagnostic.summary}</p>
             {diagnostic.overall_limitations?.length ? (
@@ -169,22 +179,22 @@ export default function AiDiagnosticsPage() {
             {diagnostic.findings?.map((f) => (
               <div key={f.event_id} className="panel" style={{ background: "var(--surface-2)" }}>
                 <h3 className="mono">{f.event_id}</h3>
-                <p className="muted">Observed facts</p>
+                <p className="muted">What the system observed</p>
                 <ul>
                   {(f.observed_facts || []).map((x) => (
                     <li key={x}>{x}</li>
                   ))}
                 </ul>
-                <p className="muted">Possible causes</p>
+                <p className="muted">What it might mean</p>
                 <ul>
                   {(f.possible_causes || []).map((c) => (
                     <li key={c.hypothesis}>
-                      <strong>{c.hypothesis}</strong> · {c.confidence}
+                      <strong>{c.hypothesis}</strong> · {confidenceLabel(c.confidence)}
                     </li>
                   ))}
                   {!f.possible_causes?.length && <li>(none)</li>}
                 </ul>
-                <p className="muted">Recommended checks</p>
+                <p className="muted">What you can check</p>
                 <ul>
                   {(f.recommended_checks || []).map((x) => (
                     <li key={x}>{x}</li>
