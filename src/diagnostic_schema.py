@@ -109,14 +109,17 @@ def insufficient_evidence_report(
     return DiagnosticReport(
         flight_id=flight_id,
         summary=(
-            "Insufficient evidence to propose a specific physical fault. "
-            + reason.strip()
+            "The automatic check could not reach a specific conclusion for this "
+            "flight, so nothing reliable can be said about the aircraft's "
+            "condition yet. " + reason.strip()
         ),
         findings=[],
         overall_limitations=[
-            "The LSTM flags reconstruction anomalies on 12 IMU/ATT features only.",
-            "BARO altitude/pressure/temperature are excluded from the deployed detector.",
-            "An anomaly score is not a confirmed root-cause diagnosis.",
+            "This check only looks at movement sensors and tilt/heading data. "
+            "It does not cover altitude, air pressure, air temperature, GPS, "
+            "battery, or motors.",
+            "A flagged moment means the recorded data looked different from "
+            "normal patterns - it is not proof that something is broken.",
             reason.strip(),
         ],
         insufficient_evidence=True,

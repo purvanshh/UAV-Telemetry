@@ -218,9 +218,14 @@ class LLMService:
         # Local short-circuit only when analysis itself failed / had no windows.
         # Zero-event / no_anomaly flights still go to the model with score_context.
         if report.analysis_status in ("insufficient_data", "error"):
+            plain_reason = (
+                "The flight data was too short or too incomplete to run the check."
+                if report.analysis_status == "insufficient_data"
+                else "The check could not run because of a processing problem with this flight's data."
+            )
             return insufficient_evidence_report(
                 report.flight_id,
-                reason=f"Analysis status is '{report.analysis_status}'.",
+                reason=plain_reason,
                 model_name=self.model,
             )
 
