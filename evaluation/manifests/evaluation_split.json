@@ -1,0 +1,187 @@
+{
+  "schema": "split_manifest/1",
+  "kind": "new_evaluation",
+  "created": null,
+  "seed": 20261017,
+  "fractions": {
+    "val": 0.4,
+    "test": 0.6
+  },
+  "description": "NEW evaluation split over the flights available in this checkout. It is not a reproduction of the historical train/val/test split (see historical_split.json). No flight here is reviewed as normal, so none is calibration_eligible.",
+  "flights": [
+    {
+      "flight_id": "case1_nominal",
+      "kind": "synthetic_generated",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "testdata",
+        "path": "testdata/case1_nominal"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "c1650adb622a284d488da4cf3e91e2acd2e134ec45856592b6805965376ac49c",
+      "stream_content_sha256": {
+        "IMU": "ab3cb5f63505cc0a32c10a6fea9295d44285777d7c115dc56a3cc9ce975c223f",
+        "ATT": "d503da5c6756f9a9efe0e86f11fc0d48d8f570e29f479962cd2aa9e2c5cf3679",
+        "BARO": "48eda53989a555318d08ba9ecdc4f88307d6f579fb73fd50a20a96a2ac8bfb03"
+      },
+      "duplicate_of": null,
+      "split": "test"
+    },
+    {
+      "flight_id": "case2_imu_burst",
+      "kind": "synthetic_generated",
+      "eval_role": "smoke_test_known_injections",
+      "source": {
+        "origin": "testdata",
+        "path": "testdata/case2_imu_burst"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "bf3c7a3b016a6be4b1d7bc8a9dc2a7032dd3298f78d1e0d84d0e972dbd841476",
+      "stream_content_sha256": {
+        "IMU": "fe3572650d5a5a0e2022515c558c708c0f91b8efdf46511bcf48292c565d9e2f",
+        "ATT": "6356abbc8f0085a8ca6706865e81b32d5547a2e00e57408d3b157e27da69a14e",
+        "BARO": "ada7bc3fc2d4d1e8a19aceb375a57ea25f47be526f2de05f9b27a01fe7d74072"
+      },
+      "duplicate_of": null,
+      "split": "test"
+    },
+    {
+      "flight_id": "case3_gyro_bias_and_vibration",
+      "kind": "synthetic_generated",
+      "eval_role": "smoke_test_known_injections",
+      "source": {
+        "origin": "testdata",
+        "path": "testdata/case3_gyro_bias_and_vibration"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "226ebff174ada93c63ab3872b1e63125af375b264c6910560a7fc96f759daae3",
+      "stream_content_sha256": {
+        "IMU": "e770b70618d8948c777d019e196856b70176a2ee53089bc29e4ef4d13d59604d",
+        "ATT": "899f7b65255b13e2fbcf64292e5210dce2fe92fe29e68615ee24928b2077534c",
+        "BARO": "c64c077b4f236350d594588916fc2f0f9e18398fa2a908f388de5eec69cbc9df"
+      },
+      "duplicate_of": null,
+      "split": "val"
+    },
+    {
+      "flight_id": "flight-20261016T154443Z-3a0fec",
+      "kind": "real_unreviewed",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "flight_store",
+        "path": "data/flights/flight-20261016T154443Z-3a0fec"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "226ebff174ada93c63ab3872b1e63125af375b264c6910560a7fc96f759daae3",
+      "stream_content_sha256": {
+        "IMU": "e770b70618d8948c777d019e196856b70176a2ee53089bc29e4ef4d13d59604d",
+        "ATT": "899f7b65255b13e2fbcf64292e5210dce2fe92fe29e68615ee24928b2077534c",
+        "BARO": "c64c077b4f236350d594588916fc2f0f9e18398fa2a908f388de5eec69cbc9df"
+      },
+      "duplicate_of": "case3_gyro_bias_and_vibration",
+      "split": "excluded",
+      "notes": "content_duplicate of case3_gyro_bias_and_vibration; never used"
+    },
+    {
+      "flight_id": "real-00000107",
+      "kind": "real_unreviewed",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "flight_store",
+        "path": "data/flights/flight-20261014T143953Z-71d29e"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "55193ebd09cc9e523db104619a85bce269cfc35c0f6d2e2cd35bee12aad747aa",
+      "stream_content_sha256": {
+        "IMU": "5b5baee666d6dba9d642d5d2c185303cf00530474ba59c97649122937e158830",
+        "ATT": "1cc16934e552961ae6e7995a8ee06f0b42b48cd6e19246c5d187d91b27e7802b",
+        "BARO": "c272169750b1852d6ae40a04303b95c39dcdaa3a57b0fd0b6ee0a2d2c912225a"
+      },
+      "duplicate_of": null,
+      "split": "val"
+    },
+    {
+      "flight_id": "real-00000107@flight-20261014T174717Z-542964",
+      "kind": "real_unreviewed",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "flight_store",
+        "path": "data/flights/flight-20261014T174717Z-542964"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "55193ebd09cc9e523db104619a85bce269cfc35c0f6d2e2cd35bee12aad747aa",
+      "stream_content_sha256": {
+        "IMU": "5b5baee666d6dba9d642d5d2c185303cf00530474ba59c97649122937e158830",
+        "ATT": "1cc16934e552961ae6e7995a8ee06f0b42b48cd6e19246c5d187d91b27e7802b",
+        "BARO": "c272169750b1852d6ae40a04303b95c39dcdaa3a57b0fd0b6ee0a2d2c912225a"
+      },
+      "duplicate_of": "real-00000107",
+      "split": "excluded",
+      "notes": "content_duplicate of real-00000107; never used"
+    },
+    {
+      "flight_id": "real-00000114",
+      "kind": "real_unreviewed",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "flight_store",
+        "path": "data/flights/flight-20261014T155922Z-8d8da8"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "0ff0cf0da8f6e265139375868a125d036e686e7d90024ab72a9568a54cbaacdb",
+      "stream_content_sha256": {
+        "IMU": "da3953c72aeb18ae010f7266cc32673c3ad1a6dbfb71f9444258531a6a688946",
+        "ATT": "810dd0240fdbe6ff1263aea3275f15c38a6852182a8aa3bd1b64e5fd0565798b",
+        "BARO": "e9979dfc28807b3a18befc3328b44fc8f16827a4da05fc610288998085ecbfc3"
+      },
+      "duplicate_of": null,
+      "split": "test"
+    },
+    {
+      "flight_id": "test2",
+      "kind": "real_unreviewed",
+      "eval_role": "synthetic_source",
+      "source": {
+        "origin": "flight_store",
+        "path": "data/flights/test2"
+      },
+      "data_available": true,
+      "calibration_eligible": false,
+      "exact_hash": null,
+      "content_hash": "bf3c7a3b016a6be4b1d7bc8a9dc2a7032dd3298f78d1e0d84d0e972dbd841476",
+      "stream_content_sha256": {
+        "IMU": "fe3572650d5a5a0e2022515c558c708c0f91b8efdf46511bcf48292c565d9e2f",
+        "ATT": "6356abbc8f0085a8ca6706865e81b32d5547a2e00e57408d3b157e27da69a14e",
+        "BARO": "ada7bc3fc2d4d1e8a19aceb375a57ea25f47be526f2de05f9b27a01fe7d74072"
+      },
+      "duplicate_of": "case2_imu_burst",
+      "split": "excluded",
+      "notes": "content_duplicate of case2_imu_burst; never used"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "counts": {
+      "train": 0,
+      "val": 2,
+      "test": 3,
+      "excluded": 3
+    }
+  }
+}

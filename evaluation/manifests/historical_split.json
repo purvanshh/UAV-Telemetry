@@ -1,0 +1,725 @@
+{
+  "schema": "split_manifest/1",
+  "kind": "historical_unverified",
+  "description": "Split ids as recorded in uav_model/feature_schema.json. Not verified: the source flights, the scores and the split code are not in the repository, so duplicate or near-duplicate leakage between these lists cannot be checked. Do not treat evaluation on a new manifest as a reproduction of historical results.",
+  "flights": [
+    {
+      "flight_id": "00000001",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000002",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000003",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000004",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000005",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000006",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000008",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000010",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000011",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000016",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000017",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000018",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000019",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000021",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000022",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000024",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000025",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000026",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000027",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000028",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000029",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000030",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000032",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000033",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000034",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000038",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000039",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000040",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000041",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000043",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000044",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000045",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000046",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000047",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000049",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000051",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000052",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000053",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000056",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000057",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000058",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000060",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000061",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000062",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000063",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000064",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000069",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000070",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000071",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000072",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000073",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000074",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000076",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000077",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000079",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000080",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000081",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000082",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000084",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000085",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000087",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000088",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000090",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000092",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000093",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000094",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000095",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000096",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000097",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000099",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000101",
+      "split": "train",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000007",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000012",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000031",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000035",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000042",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000050",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000055",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000059",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000068",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000075",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000083",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000086",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000089",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000091",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000100",
+      "split": "val",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000009",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000013",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000014",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000015",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000020",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000023",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000036",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000037",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000048",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000054",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000065",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000066",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000067",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000078",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    },
+    {
+      "flight_id": "00000098",
+      "split": "test",
+      "data_available": false,
+      "calibration_eligible": false,
+      "notes": "id recorded in feature_schema.json; source recording not in repository"
+    }
+  ],
+  "validation": {
+    "ok": true,
+    "errors": [],
+    "warnings": [],
+    "counts": {
+      "train": 71,
+      "val": 15,
+      "test": 15,
+      "excluded": 0
+    }
+  }
+}

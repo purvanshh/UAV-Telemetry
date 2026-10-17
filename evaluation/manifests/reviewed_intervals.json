@@ -1,0 +1,7 @@
+{
+  "schema": "reviewed_intervals/1",
+  "reviewer": null,
+  "reviewed_at": null,
+  "description": "Human-reviewed intervals of real flights. EMPTY: no verified reviewed labels exist in this repository. Add entries only from an actual review. Labels: expected | unusual_telemetry | data_quality_issue | uncertain. Time not covered by an interval is unreviewed, never normal. Requires reviewer and reviewed_at once any interval is added.",
+  "intervals": []
+}
