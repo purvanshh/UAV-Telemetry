@@ -73,6 +73,8 @@ Three evidence classes are never mixed:
 Threshold comparison keeps the deployed value as baseline, adds validation-quantile candidates when an
 eligible validation set exists, and a descriptive sweep; nothing is selected or promoted.
 
+Alternative detectors and context features: [ALT_DETECTORS.md](ALT_DETECTORS.md).
+
 ## Reproduce everything
 
 ```bash
@@ -81,6 +83,7 @@ python scripts/build_split_manifest.py --seed 20261017
 python scripts/calibrate_threshold.py --timestamp 2026-10-17T00:00:00+00:00   # exit 2 until eligible val flights exist
 python scripts/run_evaluation.py --seed 20261017 --timestamp 2026-10-17T00:00:00+00:00
 python scripts/verify_stored_flights.py      # stored flights re-score to their saved windows
+python scripts/run_alt_detectors.py --seed 20261017 --timestamp 2026-10-17T00:00:00+00:00
 python scripts/describe_deployment.py --check
 python -m pytest -q
 ```
