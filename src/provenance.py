@@ -93,6 +93,11 @@ def feature_provenance(
                             source_fields=[feats[feat]],
                             unit=sdef["units"].get(feat, "unknown"),
                         )
+        if feat in ("alt_rate", "press_rate"):
+            # preprocessing.safe_diff does not divide by dt: value is change per 0.1 s grid step
+            row["unit"] = f"{'m' if feat == 'alt_rate' else 'Pa'} per grid step (0.1 s)"
+            row["unit_note"] = ("feature_schema.json declares per-second units, but preprocessing "
+                                "differences without dividing by dt; not scored by the model")
         row["resampled"] = True  # every feature passes through the 10 Hz grid
         row["unit_basis"] = "declared by feature_schema.json; not verified from the uploaded log"
         used = feat in deployed

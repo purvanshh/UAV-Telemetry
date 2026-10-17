@@ -133,3 +133,10 @@ def test_event_times_map_to_source_clock(fixture_model_dir, long_flight_frames):
     tl = res.data_quality["timeline"]
     assert tl["source_start_s"] == pytest.approx(imu_t[0])
     assert "TimeUS" in tl["time_reference"]
+
+
+def test_rate_feature_units_reflect_what_preprocessing_computes(fixture_model_dir, long_flight_frames):
+    res = _run(fixture_model_dir, long_flight_frames)
+    rows = {r["feature"]: r for r in res.provenance["features"]}
+    assert "per grid step" in rows["alt_rate"]["unit"] and "unit_note" in rows["alt_rate"]
+    assert "per grid step" in rows["press_rate"]["unit"]
