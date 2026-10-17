@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from src.event_builder import AnomalyEvent
+from src.flight_identity import compute_identity, find_matches
 from src.report_schema import FlightReport, validate_report
 from src.session_state import new_flight_id
 
@@ -84,10 +85,17 @@ class FlightStore:
         warnings: List[str],
         validation: Dict[str, Any],
         flight_id: Optional[str] = None,
+        file_sha256: Optional[Dict[str, str]] = None,
+        duplicate_of: Optional[str] = None,
     ) -> str:
         fid = new_flight_id(flight_id)
         d = self.flight_dir(fid)
         if d.exists():
+            if self.exists(fid):
+                raise FlightStoreError(
+                    f"flight_id '{fid}' is already in use; refusing to overwrite an "
+                    "existing flight. Choose another id or delete it first."
+                )
             shutil.rmtree(d)
         d.mkdir(parents=True, exist_ok=True)
 
@@ -102,6 +110,9 @@ class FlightStore:
             "source": source,
             "filenames": filenames,
             "file_sizes": file_sizes,
+            "file_sha256": dict(file_sha256 or {}),
+            "identity": compute_identity(frames, file_sha256),
+            "duplicate_of": duplicate_of,
             "warnings": warnings,
             "validation": validation,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -109,6 +120,32 @@ class FlightStore:
         }
         (d / "meta.json").write_text(json.dumps(meta, indent=2))
         return fid
+
+    def identities(self) -> List[tuple]:
+        """(flight_id, identity) for every stored flight.
+
+        Flights stored before identity tracking are back-filled from their parquet
+        frames (content hash only — the original bytes are gone) and the result is
+        persisted in meta.json.
+        """
+        out = []
+        for child in sorted(self.root.iterdir()):
+            if not (child / "meta.json").is_file():
+                continue
+            meta = json.loads((child / "meta.json").read_text())
+            ident = meta.get("identity")
+            if not ident:
+                try:
+                    ident = compute_identity(self.load_frames(child.name), meta.get("file_sha256"))
+                except FlightStoreError:
+                    continue
+                meta["identity"] = ident
+                (child / "meta.json").write_text(json.dumps(meta, indent=2))
+            out.append((meta.get("flight_id", child.name), ident))
+        return out
+
+    def find_duplicates(self, identity: Dict[str, Any]) -> List[Dict[str, str]]:
+        return find_matches(identity, self.identities())
 
     def delete(self, flight_id: str) -> None:
         d = self.require(flight_id)

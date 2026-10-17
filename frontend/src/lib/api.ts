@@ -71,6 +71,8 @@ export type UploadResponse = {
   warnings: string[];
   errors: string[];
   validation?: Record<string, unknown> | null;
+  duplicate_of?: string | null;
+  duplicate_kind?: string | null;
 };
 
 export type AnalyzeResponse = {
@@ -90,6 +92,8 @@ export type AnalyzeResponse = {
   score_p50?: number | null;
   score_p95?: number | null;
   score_max?: number | null;
+  coverage_status?: string | null;
+  data_quality?: Record<string, unknown> | null;
 };
 
 export type FlightListItem = {

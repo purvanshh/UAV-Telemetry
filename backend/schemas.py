@@ -44,6 +44,9 @@ class UploadResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
     validation: Optional[Dict[str, Any]] = None
+    duplicate_of: Optional[str] = None
+    duplicate_kind: Optional[str] = None
+    matches: List[Dict[str, str]] = Field(default_factory=list)
 
 
 class AnalyzeRequest(BaseModel):
@@ -67,6 +70,8 @@ class AnalyzeResponse(BaseModel):
     score_p50: Optional[float] = None
     score_p95: Optional[float] = None
     score_max: Optional[float] = None
+    coverage_status: Optional[str] = None
+    data_quality: Optional[Dict[str, Any]] = None
 
 
 class FlightDetail(BaseModel):
@@ -83,6 +88,8 @@ class FlightDetail(BaseModel):
     has_report: bool = False
     has_ai_diagnostic: bool = False
     event_count: int = 0
+    duplicate_of: Optional[str] = None
+    file_sha256: Dict[str, str] = Field(default_factory=dict)
 
 
 class DiagnosticRequest(BaseModel):

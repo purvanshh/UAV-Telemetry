@@ -18,12 +18,13 @@ from backend.schemas import (
     FlightListItem,
     UploadResponse,
 )
-from backend.store import FlightNotFound, FlightStore
+from backend.store import FlightNotFound, FlightStore, FlightStoreError
 from src.chat_service import ask_followup, empty_chat_state
 from src.diagnostic_schema import DiagnosticReport, validate_diagnostic
 from src.diagnostic_trace import build_diagnostic_trace, format_diagnostic_trace
 from src.evidence_builder import build_evidence_pack
 from src.event_builder import DEFAULT_MAX_GAP_S
+from src.flight_identity import BLOCKING, PARTIAL, SIMILAR, compute_identity, duplicate_message
 from src.inference_service import analyze_flight
 from src.llm_service import LLMError, LLMService, api_configured, attach_ai_to_report
 from src.report_export import events_to_csv_bytes, report_to_json_bytes, windows_to_csv_bytes
@@ -56,6 +57,7 @@ async def upload_flight(
     baro: Optional[UploadFile] = File(None),
     zip_file: Optional[UploadFile] = File(None),
     flight_id: Optional[str] = Form(None),
+    allow_duplicate: bool = Form(False),
     store: FlightStore = Depends(get_store),
 ) -> UploadResponse:
     if zip_file is not None:
@@ -91,15 +93,57 @@ async def upload_flight(
         )
 
     validation = result.validation.to_dict() if result.validation else {}
-    fid = store.create_from_upload(
-        result.frames,
-        source=result.source,
-        filenames=dict(result.filenames),
-        file_sizes=dict(result.file_sizes),
-        warnings=list(result.all_warnings),
-        validation=validation,
-        flight_id=flight_id,
-    )
+    identity = compute_identity(result.frames, result.file_sha256)
+    matches = store.find_duplicates(identity)
+    dup_msg = duplicate_message(matches)
+    blocking = [m for m in matches if m["kind"] in BLOCKING]
+    if dup_msg and not allow_duplicate:
+        return UploadResponse(
+            ok=False,
+            source=result.source,
+            filenames=dict(result.filenames),
+            file_sizes=dict(result.file_sizes),
+            warnings=list(result.all_warnings),
+            errors=[dup_msg],
+            validation=validation,
+            duplicate_of=blocking[0]["flight_id"],
+            duplicate_kind=blocking[0]["kind"],
+            matches=matches,
+        )
+    warnings = list(result.all_warnings)
+    for m in matches:
+        if m["kind"] == PARTIAL:
+            warnings.append(
+                f"Some streams carry data identical to existing flight '{m['flight_id']}' "
+                "(partial overlap). It was stored as a separate flight."
+            )
+        elif m["kind"] == SIMILAR:
+            warnings.append(
+                f"Start time, duration and row counts match existing flight "
+                f"'{m['flight_id']}' but the data differ. Stored as a distinct flight."
+            )
+    try:
+        fid = store.create_from_upload(
+            result.frames,
+            source=result.source,
+            filenames=dict(result.filenames),
+            file_sizes=dict(result.file_sizes),
+            warnings=warnings,
+            validation=validation,
+            flight_id=flight_id,
+            file_sha256=dict(result.file_sha256),
+            duplicate_of=blocking[0]["flight_id"] if blocking else None,
+        )
+    except FlightStoreError as exc:
+        return UploadResponse(
+            ok=False,
+            source=result.source,
+            filenames=dict(result.filenames),
+            file_sizes=dict(result.file_sizes),
+            warnings=warnings,
+            errors=[str(exc)],
+            validation=validation,
+        )
     return UploadResponse(
         ok=True,
         flight_id=fid,
@@ -107,9 +151,12 @@ async def upload_flight(
         source=result.source,
         filenames=dict(result.filenames),
         file_sizes=dict(result.file_sizes),
-        warnings=list(result.all_warnings),
+        warnings=warnings,
         errors=[],
         validation=validation,
+        duplicate_of=blocking[0]["flight_id"] if blocking else None,
+        duplicate_kind=blocking[0]["kind"] if blocking else None,
+        matches=matches,
     )
 
 
@@ -136,6 +183,8 @@ def get_flight(
         has_report=store.load_report(flight_id) is not None,
         has_ai_diagnostic=store.load_ai_diagnostic(flight_id) is not None,
         event_count=len(events),
+        duplicate_of=meta.get("duplicate_of"),
+        file_sha256=meta.get("file_sha256") or {},
     )
 
 
@@ -167,6 +216,7 @@ def analyze(
         flight_id=flight_id,
         upload_warnings=list(meta.get("warnings") or []),
         max_gap_s=float(body.max_gap_s or DEFAULT_MAX_GAP_S),
+        flight_meta=meta,
     )
 
     status = "analyzed" if result.ok else (
@@ -203,6 +253,8 @@ def analyze(
         score_p50=result.score_p50,
         score_p95=result.score_p95,
         score_max=result.score_max,
+        coverage_status=(result.data_quality or {}).get("coverage_status"),
+        data_quality=result.data_quality,
     )
 
 

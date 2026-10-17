@@ -218,7 +218,8 @@ def load_artifacts(model_dir: Optional[Path | str] = None) -> ModelArtifacts:
     if threshold <= 0 or not (threshold == threshold):  # NaN check
         raise ArtifactError(f"Invalid lstm_ae threshold: {threshold}")
 
-    # PRD cited ~4.42494; notebook export used ~4.035 — accept whatever is saved
+    # Deployed value is ~4.035 (docs/DEPLOYED_MODEL.md). An old PRD draft cited
+    # 4.42494, which matches nothing in the repo; accept whatever is saved.
     if abs(threshold - 4.42494) > 1.0 and abs(threshold - 4.03496) > 1.0:
         warnings.append(
             f"Unusual threshold value {threshold:.5f}; verify it belongs to "

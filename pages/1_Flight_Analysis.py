@@ -111,6 +111,7 @@ if st.button("Run Anomaly Analysis", type="primary", width='stretch'):
             flight_id=flight_id,
             upload_warnings=list(meta.get("warnings") or []),
             max_gap_s=float(max_gap_s),
+            flight_meta=meta,
         )
         store_analysis(st.session_state, result)
 
@@ -129,6 +130,22 @@ for err in analysis.get("errors") or []:
     st.error(err)
 for warn in analysis.get("warnings") or []:
     st.warning(warn)
+
+_dq = analysis.get("data_quality")
+if _dq and _dq.get("windows"):
+    with st.expander(f"Data coverage — {_dq.get('coverage_status')}", expanded=_dq.get("coverage_status") != "ok"):
+        _w, _d = _dq["windows"], _dq["durations"]
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Windows scored", f"{_w['scored']} / {_w['candidate']}")
+        c2.metric("Windows discarded", f"{_w['discarded']}", f"{_w['discarded_pct']:.1f}%" if _w["discarded_pct"] is not None else None, delta_color="off")
+        c3.metric("Flight scored", f"{_d['analysed_duration_s']:.0f} s of {_d['flight_duration_s']:.0f} s")
+        st.dataframe(
+            [{"stream": k, "rows": v["rows_input"], "kept": v["rows_after_cleaning"],
+              "duplicate time": v["rows_duplicate_timestamp"], "bad time": v["rows_missing_timestamp"],
+              "gaps": v["gap_count"], "gap seconds": round(v["gap_total_s"], 1), "time unit": v["timestamp_unit"]}
+             for k, v in _dq["streams"].items()],
+            hide_index=True,
+        )
 
 if analysis.get("status") == "insufficient_data":
     st.stop()

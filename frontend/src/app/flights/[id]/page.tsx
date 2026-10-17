@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { PlotChart } from "@/components/PlotChart";
+import { DataCoverage } from "@/components/DataCoverage";
 import {
   api,
   ApiError,
@@ -161,6 +162,8 @@ export default function FlightAnalysisPage() {
             </div>
           ) : null}
         </section>
+
+        <DataCoverage dq={(analysis as { data_quality?: Record<string, unknown> } | null)?.data_quality} />
 
         {scoreFig && (
           <section className="panel">

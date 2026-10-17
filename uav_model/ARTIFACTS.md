@@ -30,3 +30,10 @@ prefixed with `lstm_autoencoder/`).
 Until `lstm_autoencoder.pth` (or a repairable extracted folder) and `scaler.json`
 are present, the app will refuse to run analysis and show a clear error. Tests
 use a temporary fixture checkpoint under `tests/fixtures/`.
+
+### What is deployed
+
+See [`docs/DEPLOYED_MODEL.md`](../docs/DEPLOYED_MODEL.md) — the generated, authoritative
+description of the feature list, scaler, input shape, window parameters and threshold
+(including SHA-256 of each artifact). `scripts/describe_deployment.py --check` fails if it
+drifts from this directory.

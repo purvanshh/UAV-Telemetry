@@ -83,8 +83,10 @@ Flights persist on disk. After the first upload, Overview lists them so you do n
 | Features | 12 conservative IMU/ATT signals |
 | Window / stride | 30 / 15 samples (~10 Hz alignment) |
 | Score | Mean squared reconstruction error after scaler |
-| Threshold | `4.034964084625244` (validation quantile 0.995) |
+| Threshold | `4.034964084625244` (recorded as validation quantile 0.995; **not reproducible from this repo** — see [docs/DEPLOYED_MODEL.md](docs/DEPLOYED_MODEL.md)) |
 | Flag rule | `score > threshold` (equality is not a flag) |
+
+Authoritative, generated description of the deployed features, scaler, window and threshold: [docs/DEPLOYED_MODEL.md](docs/DEPLOYED_MODEL.md).
 
 **Scored features:** `gyro_x/y/z`, `acc_x/y/z`, `roll`, `pitch`, `yaw_sin`, `yaw_cos`, `roll_res`, `pitch_res`
 
@@ -171,7 +173,7 @@ Full OpenAPI: `/docs`.
 
 - Anomaly scores are reconstruction MSE, not calibrated fault probabilities.
 - AI output is interpretive only — not a flight-safety or go/no-go authority.
-- No labeled real-world anomaly corpus ships with this repo; threshold was calibrated on validation flights only.
+- No labeled real-world anomaly corpus ships with this repo. The threshold's recorded provenance (0.995 quantile on validation flights) cannot be re-derived here: the source flights, validation scores and calibration script are absent. See [docs/EVALUATION.md](docs/EVALUATION.md).
 - Local OpenAI-compatible tools that probe `127.0.0.1:8000` as a vLLM host are unrelated to this API.
 
 ---

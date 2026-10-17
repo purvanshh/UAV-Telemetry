@@ -140,7 +140,7 @@ The detector must:
 
 - Generate windows of 30 timesteps with a stride of 15 timesteps.
 - Compute a reconstruction-based anomaly score for each valid window.
-- Apply the saved conservative-model threshold of approximately `4.42494`, provided it matches the loaded model and configuration.
+- Apply the saved conservative-model threshold from `uav_model/threshold_config.json` (currently `4.034964084625244`; an earlier draft of this PRD cited `4.42494`, which does not match the repository artifacts — see `docs/DEPLOYED_MODEL.md`), provided it matches the loaded model and configuration.
 - Record timestamps and whether each score exceeds the threshold.
 - Preserve raw scores for further inspection.
 - Return a clear error if the artifacts are missing or incompatible.
@@ -194,7 +194,7 @@ The report should follow a versioned schema. A representative structure is:
     "feature_count": 12,
     "window_length": 30,
     "stride": 15,
-    "threshold": 4.42494
+    "threshold": 4.034964084625244
   },
   "summary": {
     "total_windows": 0,
