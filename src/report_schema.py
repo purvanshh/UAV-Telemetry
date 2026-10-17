@@ -126,6 +126,9 @@ class FlightReport(BaseModel):
     grouping_policy: Dict[str, Any] = Field(default_factory=dict)
     ai_analysis: Optional[Any] = None
     errors: List[str] = Field(default_factory=list)
+    # Optional additions (null in reports written before they existed):
+    data_quality: Optional[Dict[str, Any]] = None  # src/data_quality.py
+    provenance: Optional[Dict[str, Any]] = None  # src/provenance.py
 
     model_config = ConfigDict(extra="forbid")
 

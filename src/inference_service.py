@@ -16,11 +16,13 @@ from src.event_builder import (
     build_events,
     events_to_dataframe,
 )
+from src.data_quality import build_data_quality, minimal_data_quality
 from src.preprocessing_adapter import (
     PreprocessingError,
-    align_uploaded_flight,
+    align_uploaded_flight_detailed,
     data_quality_warnings,
 )
+from src.provenance import build_provenance
 from src.report_builder import build_flight_report, events_dataframe_from_report
 from src.report_schema import FlightReport
 from src.window_generator import WindowBatch, generate_windows
@@ -54,6 +56,9 @@ class AnalysisResult:
     report: Optional[FlightReport] = None
     artifact_warnings: List[str] = field(default_factory=list)
     max_gap_s: float = DEFAULT_MAX_GAP_S
+    coverage_status: Optional[str] = None
+    data_quality: Optional[Dict[str, Any]] = None
+    provenance: Optional[Dict[str, Any]] = None
 
     def summary_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -97,6 +102,8 @@ def _empty_report(
     warnings: List[str],
     errors: List[str],
     windows: Optional[pd.DataFrame] = None,
+    data_quality: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> Optional[FlightReport]:
     if artifacts is None:
         return None
@@ -113,6 +120,8 @@ def _empty_report(
             feature_schema_version=artifacts.feature_schema.get("version"),
             data_quality_warnings=warnings,
             errors=errors,
+            data_quality=data_quality,
+            provenance=provenance,
         )
     except Exception:
         return None
@@ -124,9 +133,13 @@ def analyze_flight(
     model_dir: Optional[str] = None,
     upload_warnings: Optional[List[str]] = None,
     max_gap_s: float = DEFAULT_MAX_GAP_S,
+    flight_meta: Optional[Dict[str, Any]] = None,
 ) -> AnalysisResult:
     """Run preprocessing → windows → LSTM scoring → event grouping → report."""
     warnings: List[str] = list(upload_warnings or [])
+    flight_meta = flight_meta or {}
+    filenames = dict(flight_meta.get("filenames") or {})
+    file_hashes = dict(flight_meta.get("file_sha256") or {})
     try:
         artifacts = get_artifacts(model_dir)
     except ArtifactError as exc:
@@ -141,8 +154,10 @@ def analyze_flight(
     schema_ver = artifacts.feature_schema.get("version")
 
     try:
-        aligned, _prep = align_uploaded_flight(frames, model_dir=model_dir)
+        detail = align_uploaded_flight_detailed(frames, model_dir=model_dir)
+        aligned = detail.aligned
     except PreprocessingError as exc:
+        dq_err = minimal_data_quality(str(exc), status="error")
         return AnalysisResult(
             ok=False,
             status="error",
@@ -155,16 +170,49 @@ def analyze_flight(
             win_samples=artifacts.win_samples,
             stride_samples=artifacts.stride_samples,
             feature_schema_version=schema_ver,
+            coverage_status="error",
+            data_quality=dq_err,
             report=_empty_report(
                 flight_id=flight_id,
                 status="error",
                 artifacts=artifacts,
                 warnings=warnings,
                 errors=[str(exc)],
+                data_quality=dq_err,
             ),
         )
 
     warnings.extend(data_quality_warnings(aligned))
+    candidate_features = list(detail.cfg["features"])
+    provenance = build_provenance(
+        artifacts=artifacts,
+        align_cfg=detail.cfg,
+        candidate_features=candidate_features,
+        filenames=filenames,
+        file_hashes=file_hashes,
+        flight_meta=flight_meta,
+        timebase=detail.timebase,
+    )
+    schema = detail.prep.DEFAULT_SCHEMA
+    used_cols = {
+        "IMU": list(schema["IMU"]["features"].values()),
+        "ATT": [v for k, v in schema["ATT"]["features"].items() if k != "des_yaw"],
+        "BARO": [v for k, v in schema["BARO"]["features"].items() if k != "alt_amsl"],
+    }
+
+    def _dq(n_scored: Optional[int]) -> Dict[str, Any]:
+        return build_data_quality(
+            frames=frames,
+            detail=detail,
+            deployed_features=list(artifacts.features),
+            candidate_features=candidate_features,
+            used_source_columns=used_cols,
+            win_samples=artifacts.win_samples,
+            stride_samples=artifacts.stride_samples,
+            n_scored=n_scored,
+            filenames=filenames,
+            file_hashes=file_hashes,
+        )
 
     try:
         batch: WindowBatch = generate_windows(aligned, artifacts, model_dir=model_dir)
@@ -191,6 +239,9 @@ def analyze_flight(
             ),
         )
 
+    dq = _dq(batch.n_windows)
+    warnings.extend(w for w in dq["warnings"] if w not in warnings)
+
     if batch.n_windows == 0:
         errs = [
             "No valid windows could be generated from this flight. "
@@ -213,12 +264,17 @@ def analyze_flight(
             flagged_rate=None,
             aligned=aligned,
             artifact_warnings=list(artifacts.warnings),
+            coverage_status=dq["coverage_status"],
+            data_quality=dq,
+            provenance=provenance,
             report=_empty_report(
                 flight_id=flight_id,
                 status="insufficient_data",
                 artifacts=artifacts,
                 warnings=warnings,
                 errors=errs,
+                data_quality=dq,
+                provenance=provenance,
             ),
         )
 
@@ -240,6 +296,9 @@ def analyze_flight(
             feature_schema_version=schema_ver,
             n_windows=batch.n_windows,
             aligned=aligned,
+            coverage_status=dq["coverage_status"],
+            data_quality=dq,
+            provenance=provenance,
         )
 
     rows = []
@@ -287,6 +346,8 @@ def analyze_flight(
         score_p50=float(np.quantile(scores, 0.50)),
         score_p95=float(np.quantile(scores, 0.95)),
         score_max=float(np.max(scores)),
+        data_quality=dq,
+        provenance=provenance,
     )
     # Prefer report-derived event CSV (includes affected_signals)
     events_df = events_dataframe_from_report(report)
@@ -317,12 +378,22 @@ def analyze_flight(
         report=report,
         artifact_warnings=list(artifacts.warnings),
         max_gap_s=max_gap_s,
+        coverage_status=dq["coverage_status"],
+        data_quality=dq,
+        provenance=provenance,
     )
 
     if n_flagged == 0:
+        extra = ""
+        if dq["coverage_status"] != "ok":
+            extra = (
+                f" Only {dq['durations']['analysed_fraction_of_aligned']:.0%} of the "
+                "aligned flight was scored (see data quality), so this says nothing "
+                "about the unscored portion."
+            )
         result.warnings.append(
             "No windows exceeded the saved threshold. This is not a guarantee "
             "that the flight is free of anomalies — the detector only scores "
-            "the 12 conservative IMU/ATT features."
+            "the 12 conservative IMU/ATT features." + extra
         )
     return result

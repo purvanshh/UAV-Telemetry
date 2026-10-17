@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 
 from src.artifact_loader import resolve_model_dir
+from src.timebase import TimebaseReport, normalize_timestamps
 
 
 class PreprocessingError(RuntimeError):
@@ -40,42 +42,30 @@ def _import_prep(model_dir: Optional[Path | str] = None):
     return mod
 
 
-def _ensure_stream_df(prep, df: pd.DataFrame, spec: Dict[str, Any]) -> pd.DataFrame:
-    if hasattr(prep, "load_stream_df"):
-        return prep.load_stream_df(df, spec)
-    # Fallback for notebook exports that only expose load_stream(path, spec)
-    unit_mult = getattr(prep, "UNIT_MULT", {"us": 1e6})
-    resolve = prep.resolve
-    ts_col = None
-    for c in spec["ts_priority"]:
-        r = resolve(list(df.columns), c)
-        if r is not None:
-            ts_col = r
-            break
-    if ts_col is None:
-        raise ValueError("no timestamp column")
-    t_raw = pd.to_numeric(df[ts_col], errors="coerce").astype("float64")
-    unit = spec.get("ts_unit", "us")
-    out = df.copy()
-    out["__t_s"] = (t_raw / unit_mult[unit]).values
-    out = (
-        out.dropna(subset=["__t_s"])
-        .sort_values("__t_s")
-        .drop_duplicates("__t_s")
-        .reset_index(drop=True)
-    )
-    return out
+@dataclass
+class AlignmentDetail:
+    """Aligned frame plus everything needed to audit how it was produced."""
+
+    aligned: pd.DataFrame
+    prep: Any
+    cfg: Dict[str, Any]
+    timebase: Dict[str, TimebaseReport]  # per stream, raw-input accounting
+    clean_streams: Dict[str, pd.DataFrame]  # sorted/de-duplicated, with __t_s
 
 
-def align_uploaded_flight(
+def _normalize_stream(df: pd.DataFrame, stream: str, max_gap_s: float):
+    """Timestamp handling shared with upload validation (src/timebase.py)."""
+    clean, report = normalize_timestamps(df, stream=stream, gap_threshold_s=max_gap_s)
+    if report.errors:
+        raise PreprocessingError("; ".join(report.errors))
+    return clean, report
+
+
+def align_uploaded_flight_detailed(
     frames: Dict[str, pd.DataFrame],
     model_dir: Optional[Path | str] = None,
     align_cfg: Optional[Dict[str, Any]] = None,
-) -> Tuple[pd.DataFrame, Any]:
-    """Load IMU/ATT/BARO DataFrames into the notebook preprocessing pipeline.
-
-    Returns ``(aligned_df, prep_module)``.
-    """
+) -> AlignmentDetail:
     for stream in ("IMU", "ATT", "BARO"):
         if stream not in frames or frames[stream] is None:
             raise PreprocessingError(f"Missing {stream} frame for alignment.")
@@ -87,10 +77,17 @@ def align_uploaded_flight(
         cfg.update(align_cfg)
 
     try:
-        imu = _ensure_stream_df(prep, frames["IMU"], schema["IMU"])
-        att = _ensure_stream_df(prep, frames["ATT"], schema["ATT"])
-        baro = _ensure_stream_df(prep, frames["BARO"], schema["BARO"])
-        aligned = prep.align_flight(imu, att, baro, schema, cfg)
+        clean: Dict[str, pd.DataFrame] = {}
+        reports: Dict[str, TimebaseReport] = {}
+        for stream in ("IMU", "ATT", "BARO"):
+            clean[stream], reports[stream] = _normalize_stream(
+                frames[stream], stream, float(cfg["max_gap_s"])
+            )
+        aligned = prep.align_flight(
+            clean["IMU"], clean["ATT"], clean["BARO"], schema, cfg
+        )
+    except PreprocessingError:
+        raise
     except Exception as exc:
         raise PreprocessingError(f"Preprocessing failed: {exc}") from exc
 
@@ -100,7 +97,22 @@ def align_uploaded_flight(
         raise PreprocessingError(
             "Aligned output is missing _session_id; check preprocessing.py version."
         )
-    return aligned, prep
+    return AlignmentDetail(
+        aligned=aligned, prep=prep, cfg=cfg, timebase=reports, clean_streams=clean
+    )
+
+
+def align_uploaded_flight(
+    frames: Dict[str, pd.DataFrame],
+    model_dir: Optional[Path | str] = None,
+    align_cfg: Optional[Dict[str, Any]] = None,
+) -> Tuple[pd.DataFrame, Any]:
+    """Load IMU/ATT/BARO DataFrames into the notebook preprocessing pipeline.
+
+    Returns ``(aligned_df, prep_module)``.
+    """
+    d = align_uploaded_flight_detailed(frames, model_dir, align_cfg)
+    return d.aligned, d.prep
 
 
 def data_quality_warnings(aligned: pd.DataFrame) -> list[str]:

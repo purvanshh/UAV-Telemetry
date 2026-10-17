@@ -37,6 +37,8 @@ def build_flight_report(
     score_p50: Optional[float] = None,
     score_p95: Optional[float] = None,
     score_max: Optional[float] = None,
+    data_quality: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> FlightReport:
     """Assemble and validate the downloadable JSON report."""
     warnings = list(data_quality_warnings or [])
@@ -107,6 +109,8 @@ def build_flight_report(
         },
         ai_analysis=None,
         errors=err_list,
+        data_quality=data_quality,
+        provenance=provenance,
     )
     return validate_report(report)
 

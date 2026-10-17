@@ -18,8 +18,8 @@ import pandas as pd
 from src.schema import (
     STREAM_SCHEMA,
     STREAMS,
-    TIMESTAMP_CANDIDATES,
 )
+from src.timebase import SUPPORTED_TIMESTAMP_FIELDS, normalize_timestamps
 
 
 def _norm(s: str) -> str:
@@ -44,6 +44,11 @@ class StreamValidationResult:
     n_cols: int = 0
     columns: List[str] = field(default_factory=list)
     timestamp_column: Optional[str] = None
+    timestamp_unit: Optional[str] = None
+    timestamp_unit_source: Optional[str] = None
+    n_valid_timestamps: int = 0
+    n_missing_timestamps: int = 0
+    gaps: List[Dict[str, float]] = field(default_factory=list)
     t_start: Optional[float] = None
     t_end: Optional[float] = None
     duration_s: Optional[float] = None
@@ -74,43 +79,6 @@ class FlightValidationResult:
             "warnings": self.warnings,
             "streams": {k: v.to_dict() for k, v in self.streams.items()},
         }
-
-
-def _find_timestamp_column(columns: List[str]) -> Optional[str]:
-    for cand in TIMESTAMP_CANDIDATES:
-        resolved = resolve_column(columns, cand)
-        if resolved is not None:
-            return resolved
-    return None
-
-
-def _timeus_to_seconds(series: pd.Series) -> np.ndarray:
-    """Convert TimeUS-like numeric timestamps to seconds.
-
-    Matches the notebook convention: TimeUS is microseconds (verified by rate
-    plausibility). If the column is already datetime-parseable (Timestamp),
-    convert via pandas.
-    """
-    # Prefer numeric microseconds (primary clock in the dataset).
-    numeric = pd.to_numeric(series, errors="coerce")
-    if numeric.notna().sum() >= max(2, int(0.5 * len(series))):
-        # Heuristic: median dt in [1e3, 1e7] → microseconds at ~1–1000 Hz.
-        finite = numeric.dropna().to_numpy(dtype="float64")
-        if len(finite) >= 2:
-            med = float(np.median(np.diff(finite)))
-            if med > 0:
-                if 1e2 <= med <= 1e8:
-                    return (numeric / 1e6).to_numpy(dtype="float64")
-                if 1e-4 <= med <= 10:
-                    return numeric.to_numpy(dtype="float64")
-        return (numeric / 1e6).to_numpy(dtype="float64")
-
-    dt = pd.to_datetime(series, errors="coerce", utc=True)
-    if dt.notna().sum() >= max(2, int(0.5 * len(series))):
-        # ns since epoch → seconds
-        return (dt.astype("int64") / 1e9).to_numpy(dtype="float64")
-
-    return np.full(len(series), np.nan, dtype="float64")
 
 
 def read_csv_bytes(
@@ -190,53 +158,26 @@ def validate_stream(
         if resolved is not None:
             result.resolved_features[feat] = resolved
 
-    # Timestamp
-    ts_col = _find_timestamp_column(cols)
-    if ts_col is None:
+    # Timestamp — same interpretation as preprocessing (src/timebase.py)
+    _clean, tb = normalize_timestamps(df, stream=stream)
+    result.timestamp_column = tb.column
+    result.timestamp_unit = tb.unit
+    result.timestamp_unit_source = tb.unit_source
+    result.n_valid_timestamps = tb.n_valid
+    result.n_missing_timestamps = tb.n_missing
+    result.duplicate_timestamps = tb.n_duplicates
+    result.non_monotonic_timestamps = tb.n_nonmonotonic_steps
+    result.gaps = list(tb.gaps)
+    result.warnings.extend(tb.warnings)
+    if tb.errors:
         result.ok = False
-        result.errors.append(
-            f"{stream}: no usable timestamp column. "
-            f"Looked for: {', '.join(TIMESTAMP_CANDIDATES)}."
-        )
+        result.errors.extend(tb.errors)
     else:
-        result.timestamp_column = ts_col
-        t_s = _timeus_to_seconds(df[ts_col])
-        finite = t_s[np.isfinite(t_s)]
-        usable = len(finite)
-        if usable < max(2, int(0.5 * len(df))):
-            result.ok = False
-            result.errors.append(
-                f"{stream}: timestamp column '{ts_col}' has too few usable values "
-                f"({usable}/{len(df)})."
-            )
-        else:
-            result.t_start = float(finite.min())
-            result.t_end = float(finite.max())
-            result.duration_s = float(finite.max() - finite.min())
-            if len(finite) >= 2:
-                # Use original order for non-monotonic / duplicates checks
-                raw_t = t_s.copy()
-                valid_mask = np.isfinite(raw_t)
-                valid_t = raw_t[valid_mask]
-                dt = np.diff(valid_t)
-                result.duplicate_timestamps = int((dt == 0).sum())
-                result.non_monotonic_timestamps = int((dt < 0).sum())
-                if result.duplicate_timestamps > 0:
-                    result.warnings.append(
-                        f"{stream}: {result.duplicate_timestamps} duplicate timestamp(s)."
-                    )
-                if result.non_monotonic_timestamps > 0:
-                    result.warnings.append(
-                        f"{stream}: {result.non_monotonic_timestamps} non-monotonic "
-                        f"timestamp step(s) in file order (will be sorted before analysis)."
-                    )
-                sorted_t = np.sort(valid_t)
-                sdt = np.diff(sorted_t)
-                sdt = sdt[sdt > 0]
-                if len(sdt):
-                    med = float(np.median(sdt))
-                    result.median_dt_s = med
-                    result.est_hz = (1.0 / med) if med > 0 else None
+        result.t_start = tb.t_start_s
+        result.t_end = tb.t_end_s
+        result.duration_s = tb.duration_s
+        result.median_dt_s = tb.median_dt_s
+        result.est_hz = tb.est_hz
 
     # Missing values
     result.missing_value_frac = float(df.isna().mean().mean()) if df.shape[1] else 0.0

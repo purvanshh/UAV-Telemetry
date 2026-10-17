@@ -11,6 +11,7 @@ from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 
+from src.flight_identity import sha256_bytes
 from src.schema import STREAM_FILENAME_HINTS, STREAMS
 from src.validation import FlightValidationResult, read_csv_bytes, validate_flight
 
@@ -26,6 +27,7 @@ class UploadResult:
     frames: Dict[str, pd.DataFrame] = field(default_factory=dict)
     filenames: Dict[str, str] = field(default_factory=dict)
     file_sizes: Dict[str, int] = field(default_factory=dict)
+    file_sha256: Dict[str, str] = field(default_factory=dict)
     validation: Optional[FlightValidationResult] = None
     source: str = ""  # "individual" | "zip"
 
@@ -121,6 +123,7 @@ def load_individual_csvs(
         raw = _read_bytes(files[stream])
         name = filenames.get(stream) or f"{stream}.csv"
         result.file_sizes[stream] = len(raw)
+        result.file_sha256[stream] = sha256_bytes(raw)
         result.filenames[stream] = name
 
         # Guard against wrong stream assignment by filename when provided
@@ -246,6 +249,7 @@ def load_zip_archive(
         name = Path(member).name
         result.filenames[stream] = name
         result.file_sizes[stream] = len(member_bytes)
+        result.file_sha256[stream] = sha256_bytes(member_bytes)
         df, err = _parse_csv_member(member_bytes, name)
         if err:
             result.ok = False
