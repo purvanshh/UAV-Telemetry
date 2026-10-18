@@ -134,13 +134,29 @@ def verify_rate_convention(
                 if v.sum() < 50:
                     row[name] = None
                     continue
-                c = float(np.corrcoef(d[v], g[v])[0, 1])
-                slope = float(np.polyfit(d[v], g[v], 1)[0])
-                row[name] = {"corr": c, "slope": slope, "n": int(v.sum())}
+                x = d[v] - d[v].mean()
+                if x.max() > x.min() and g[v].max() > g[v].min():
+                    c = float(np.corrcoef(d[v], g[v])[0, 1])
+                    # Scale the regressor before the fit: same least-squares slope,
+                    # but the design matrix stays well-conditioned (no RankWarning
+                    # when the series is near-constant).
+                    spread = float(np.sqrt(np.sum(x * x)))
+                    slope = float(np.polyfit(x / spread, g[v], 1)[0]) / spread
+                    row[name] = {
+                        "corr": c if np.isfinite(c) else None,
+                        "slope": slope if np.isfinite(slope) else None,
+                        "n": int(v.sum()),
+                    }
+                else:
+                    # One series has no variation: corr/slope are undefined.
+                    row[name] = {"corr": None, "slope": None, "n": int(v.sum())}
             rows.append(row)
     gate_rows = [r for r in rows if r["gating"] and r["zyx"]]
     passed = bool(gate_rows) and all(
-        r["zyx"]["corr"] >= VERIFY_MIN_CORR and VERIFY_MIN_SLOPE <= r["zyx"]["slope"] <= VERIFY_MAX_SLOPE
+        r["zyx"]["corr"] is not None
+        and r["zyx"]["slope"] is not None
+        and r["zyx"]["corr"] >= VERIFY_MIN_CORR
+        and VERIFY_MIN_SLOPE <= r["zyx"]["slope"] <= VERIFY_MAX_SLOPE
         for r in gate_rows
     )
     return {

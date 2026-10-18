@@ -30,6 +30,9 @@ outputs/
 data/flights/
 !data/flights/.gitkeep
 
+# Synthetic smoke-test flights (generated locally, not part of the repo)
+testdata/
+
 # Next.js
 frontend/node_modules/
 frontend/.next/

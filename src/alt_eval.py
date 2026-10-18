@@ -373,12 +373,16 @@ def render_alt_markdown(r: Mapping[str, Any]) -> str:
     L.append(f"Matched alert burden: baseline flags {bs['baseline_flagged']}/{bs['windows']} burden-set windows "
              f"({100 * bs['target_flagged_fraction']:.2f}%); each alternative's threshold is matched to that.\n")
     rc = r["rate_convention"]
+
+    def _fmt2(value: Optional[float]) -> str:
+        return "n/a" if value is None else f"{value:.2f}"
+
     L.append(f"Euler→body-rate convention verified on real flights: **{rc['verified']}**. "
              + ("" if rc["verified"] else f"({rc['reason']}) "))
     for row in rc["rows"]:
         if row["gating"] and row["zyx"]:
-            L.append(f"  - {row['flight_id']} {row['axis']}: ZYX corr {row['zyx']['corr']:.2f} slope {row['zyx']['slope']:.2f}"
-                     + (f"; naive corr {row['naive']['corr']:.2f}" if row["naive"] else ""))
+            L.append(f"  - {row['flight_id']} {row['axis']}: ZYX corr {_fmt2(row['zyx']['corr'])} slope {_fmt2(row['zyx']['slope'])}"
+                     + (f"; naive corr {_fmt2(row['naive']['corr'])}" if row["naive"] else ""))
     if r["excluded_detectors"]:
         L.append(f"\nExcluded: {r['excluded_detectors']}")
     L.append("\n## Held-out results (synthetic injections; burden unreviewed)\n")

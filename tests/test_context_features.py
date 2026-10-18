@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -85,6 +87,31 @@ def test_phase_rule():
     v = np.array([VERTICAL_MPS, 0.0, 0.0, 0.0])
     g = np.array([0.0, ACTIVE_RAD_S, 0.0, 0.05])
     assert list(window_phase(v, g)) == ["vertical", "active", "steady", "steady"]
+
+
+def test_verification_fit_is_conditioning_safe():
+    """Regression: near-constant derived rates (rank-deficient [x, 1] design
+    matrix) must not raise numpy's RankWarning, and zero-variance input must
+    report corr/slope as undefined instead of machine-noise values."""
+    n = 1800
+    g = np.random.default_rng(0).normal(0, 0.1, n)
+    x = np.gradient(np.linspace(-5, 5, n), np.arange(n) * 0.1)  # constant up to float jitter
+
+    def frames(d):
+        sig = pd.DataFrame({"_session_id": np.zeros(n, dtype=int),
+                            **{c: d for c in ("rate_der_x", "rate_naive_x", "rate_der_y",
+                                              "rate_naive_y", "rate_der_z", "rate_naive_z")}})
+        al = pd.DataFrame({"gyro_x": g, "gyro_y": g, "gyro_z": g})
+        return {"f": sig}, {"f": al}
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", np.exceptions.RankWarning)
+        near = verify_rate_convention(*frames(x), gating=["f"])
+        flat = verify_rate_convention(*frames(np.full(n, 1e-3)), gating=["f"])
+    assert near["rows"] and not near["verified"]  # near-constant: fit computable, gate still fails
+    assert all(r["zyx"] is not None and np.isfinite(r["zyx"]["slope"]) for r in near["rows"])
+    assert all(r["zyx"] == {"corr": None, "slope": None, "n": n} for r in flat["rows"])
+    assert not flat["verified"]
 
 
 def test_command_yaw_residual_wraps(tmp_path):
