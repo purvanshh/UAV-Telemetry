@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "note": "A profile is explicit dataset configuration: it states what a known CSV layout's columns mean and their units. A file is matched only when ALL signature headers are present. A column whose unit is null is deliberately unresolved: add the documented unit here once it is known. Never add a unit that is not documented for the dataset.",
+  "profiles": [
+    {
+      "id": "ctrl_log_tms_v1",
+      "description": "Flight-controller log with t_ms / phi_deg / theta_deg / ax..gz columns",
+      "documentation_status": "Column names and the time/angle units come from the project owner's description of this format. Accelerometer and gyro units are NOT documented yet; yaw and desired attitude are not part of the described columns.",
+      "signature": ["t_ms", "phi_deg", "theta_deg", "ax", "ay", "az", "gx", "gy", "gz"],
+      "time": {"column": "t_ms", "unit": "ms"},
+      "columns": {
+        "phi_deg": {"canonical": "roll", "unit": "deg"},
+        "theta_deg": {"canonical": "pitch", "unit": "deg"},
+        "ax": {"canonical": "acc_x", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
+        "ay": {"canonical": "acc_y", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
+        "az": {"canonical": "acc_z", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
+        "gx": {"canonical": "gyro_x", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."},
+        "gy": {"canonical": "gyro_y", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."},
+        "gz": {"canonical": "gyro_z", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."}
+      },
+      "ignored": ["armed", "rc_fs", "tof_ok", "rc_roll", "rc_pitch", "rc_thr", "z_est", "z_set", "u1_core", "u1_cmd"],
+      "ignored_patterns": ["^m[0-9]+$", "^u[0-9]+_", "^rc_"]
+    }
+  ]
+}
