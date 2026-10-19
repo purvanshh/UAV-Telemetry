@@ -31,7 +31,9 @@ AI_ERROR_KEY = "ai_error"
 def new_flight_id(user_id: Optional[str] = None) -> str:
     """Return a user-provided ID or a generated identifier."""
     if user_id and str(user_id).strip():
-        return str(user_id).strip()
+        from src.limits import validate_flight_id
+
+        return validate_flight_id(str(user_id).strip())
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"flight-{stamp}-{uuid.uuid4().hex[:6]}"
 

@@ -49,16 +49,15 @@ class UAVDetector:
 
     def _load_model(self) -> LSTMAE:
         try:
+            # weights_only=True: the checkpoint is tensors + plain numbers, so no
+            # arbitrary pickle code can run when a file is swapped or tampered with.
             ckpt = torch.load(
                 self.artifacts.checkpoint_path,
                 map_location="cpu",
-                weights_only=False,
+                weights_only=True,
             )
-        except TypeError:
-            # Older torch without weights_only
-            ckpt = torch.load(self.artifacts.checkpoint_path, map_location="cpu")
         except Exception as exc:
-            raise DetectorError(f"Failed to load checkpoint: {exc}") from exc
+            raise DetectorError(f"Failed to load checkpoint safely: {exc}") from exc
 
         n_features = int(ckpt.get("n_features", self.artifacts.n_features))
         if n_features != self.artifacts.n_features:
@@ -119,7 +118,16 @@ class UAVDetector:
 
     def score(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Return (per_window_scores, flags, per_feature_errors)."""
+        if len(X) and not np.isfinite(X).all():
+            raise DetectorError("Input windows contain non-finite values; refusing to score.")
         scores = self.recon_error_per_window(X)
-        flags = scores > self.threshold
         per_feat = self.recon_error_per_feature(X)
+        # NaN > threshold is False, which would silently read as "no anomaly".
+        if not np.isfinite(scores).all() or not np.isfinite(per_feat).all():
+            bad = int((~np.isfinite(scores)).sum())
+            raise DetectorError(
+                f"Non-finite reconstruction error in {bad} window(s); the scores are "
+                "invalid and no anomaly decision was made."
+            )
+        flags = scores > self.threshold
         return scores, flags, per_feat

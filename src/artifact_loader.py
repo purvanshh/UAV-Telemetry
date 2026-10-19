@@ -91,52 +91,60 @@ def _checkpoint_zip_looks_valid(path: Path) -> bool:
 
 
 def ensure_checkpoint(model_dir: Optional[Path | str] = None) -> Path:
-    """Ensure ``lstm_autoencoder.pth`` exists as a Torch-readable zip.
+    """Return the path of a valid ``lstm_autoencoder.pth``; never modifies the directory.
 
-    If only the extracted ``lstm_autoencoder/`` folder is present (or the
-    ``.pth`` was re-zipped without the required archive prefix), rebuild it.
+    Inference must not rebuild or replace model artifacts implicitly. If the file is
+    missing or not a Torch zip, this raises with the explicit repair step instead.
     """
     d = resolve_model_dir(model_dir)
     pth = d / CHECKPOINT_NAME
     if _checkpoint_zip_looks_valid(pth):
         return pth
-
-    extracted = _extracted_checkpoint_dir(d)
-    if extracted is None:
-        if pth.exists():
-            raise ArtifactError(
-                f"{CHECKPOINT_NAME} exists but is not a valid Torch checkpoint zip. "
-                f"Re-export from Kaggle or place the extracted {CHECKPOINT_DIR_NAME}/ "
-                "folder beside it so it can be repaired."
+    if pth.exists():
+        hint = ""
+        if _extracted_checkpoint_dir(d) is not None:
+            hint = (
+                f" An extracted {CHECKPOINT_DIR_NAME}/ folder is present; run "
+                "`python -c \"from src.artifact_loader import repair_checkpoint; "
+                "repair_checkpoint()\"` to rebuild it deliberately."
             )
         raise ArtifactError(
-            f"Missing {CHECKPOINT_NAME}. Place the Kaggle export in {d} "
-            "(see uav_model/ARTIFACTS.md)."
+            f"{CHECKPOINT_NAME} exists but is not a valid Torch checkpoint zip; "
+            "refusing to modify it automatically." + hint
         )
+    raise ArtifactError(
+        f"Missing {CHECKPOINT_NAME}. Place the Kaggle export in {d} "
+        "(see uav_model/ARTIFACTS.md)."
+    )
 
-    # Torch expects zip entries prefixed with the archive stem.
+
+def repair_checkpoint(model_dir: Optional[Path | str] = None) -> Path:
+    """Explicit, operator-invoked rebuild of the .pth from the extracted folder.
+
+    Not called by inference or ``load_artifacts``. Writes a new file next to the old
+    one and swaps it in only after it validates.
+    """
+    d = resolve_model_dir(model_dir)
+    pth = d / CHECKPOINT_NAME
+    extracted = _extracted_checkpoint_dir(d)
+    if extracted is None:
+        raise ArtifactError(f"No extracted {CHECKPOINT_DIR_NAME}/ folder in {d} to rebuild from.")
     prefix = Path(CHECKPOINT_NAME).stem
-    if pth.exists():
-        pth.unlink()
-    with zipfile.ZipFile(pth, "w", compression=zipfile.ZIP_STORED) as zf:
+    tmp = d / f".{CHECKPOINT_NAME}.rebuild"
+    with zipfile.ZipFile(tmp, "w", compression=zipfile.ZIP_STORED) as zf:
         for fp in sorted(extracted.rglob("*")):
             if fp.is_file():
-                arcname = f"{prefix}/{fp.relative_to(extracted).as_posix()}"
-                zf.write(fp, arcname)
-
-    if not _checkpoint_zip_looks_valid(pth):
-        raise ArtifactError(
-            f"Failed to rebuild a valid {CHECKPOINT_NAME} from {extracted}."
-        )
+                zf.write(fp, f"{prefix}/{fp.relative_to(extracted).as_posix()}")
+    if not _checkpoint_zip_looks_valid(tmp):
+        tmp.unlink()
+        raise ArtifactError(f"Failed to rebuild a valid {CHECKPOINT_NAME} from {extracted}.")
+    tmp.replace(pth)
     return pth
 
 
 def missing_artifacts(model_dir: Optional[Path | str] = None) -> List[str]:
     d = resolve_model_dir(model_dir)
     missing = [name for name in REQUIRED_FILES if not (d / name).exists()]
-    # Treat a valid extracted checkpoint folder as satisfying the .pth requirement
-    if CHECKPOINT_NAME in missing and _extracted_checkpoint_dir(d) is not None:
-        missing = [m for m in missing if m != CHECKPOINT_NAME]
     return missing
 
 
@@ -149,12 +157,6 @@ def load_artifacts(model_dir: Optional[Path | str] = None) -> ModelArtifacts:
     d = resolve_model_dir(model_dir)
     if not d.is_dir():
         raise ArtifactError(f"Model directory not found: {d}")
-
-    # Repair / materialize .pth before the missing-file check when possible
-    try:
-        ensure_checkpoint(d)
-    except ArtifactError:
-        pass
 
     missing = missing_artifacts(d)
     if missing:

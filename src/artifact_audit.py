@@ -75,7 +75,7 @@ def audit(model_dir=None) -> Dict[str, Any]:
 
     import torch
 
-    ck = torch.load(a.checkpoint_path, map_location="cpu", weights_only=False)
+    ck = torch.load(a.checkpoint_path, map_location="cpu", weights_only=True)
     ck_meta = {k: (v if not hasattr(v, "shape") and k != "state_dict" else None) for k, v in ck.items() if k != "state_dict"}
     extra_keys = sorted(set(ck) - {"state_dict", "n_features", "hidden_dim", "latent_dim", "win_samples", "num_layers"})
 

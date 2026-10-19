@@ -19,7 +19,11 @@ from src.schema import (
     STREAM_SCHEMA,
     STREAMS,
 )
+from src.limits import MAX_CSV_COLUMNS, MAX_CSV_ROWS
 from src.timebase import SUPPORTED_TIMESTAMP_FIELDS, normalize_timestamps
+
+
+MAX_NON_NUMERIC_FRAC = 0.01  # above this share of text/inf cells a required column is rejected
 
 
 def _norm(s: str) -> str:
@@ -93,7 +97,7 @@ def read_csv_bytes(
             buf = data
             if hasattr(buf, "seek"):
                 buf.seek(0)
-        df = pd.read_csv(buf)
+        df = pd.read_csv(buf, nrows=MAX_CSV_ROWS + 1)
     except Exception as exc:
         raise ValueError(
             f"Could not parse '{filename or 'file'}' as CSV: {exc}"
@@ -101,6 +105,14 @@ def read_csv_bytes(
     if df is None or df.empty:
         raise ValueError(
             f"'{filename or 'file'}' is empty or has no data rows."
+        )
+    if len(df) > MAX_CSV_ROWS:
+        raise ValueError(
+            f"'{filename or 'file'}' has more than {MAX_CSV_ROWS:,} rows; refusing to load it."
+        )
+    if df.shape[1] > MAX_CSV_COLUMNS:
+        raise ValueError(
+            f"'{filename or 'file'}' has {df.shape[1]} columns; the limit is {MAX_CSV_COLUMNS}."
         )
     return df
 
@@ -157,6 +169,37 @@ def validate_stream(
         resolved = resolve_column(cols, src)
         if resolved is not None:
             result.resolved_features[feat] = resolved
+
+    # Required telemetry must be numeric: text such as "N/A" or "bad" is not a
+    # missing value the pipeline can interpolate over, it is a malformed column.
+    for feat, src in spec["required_features"].items():
+        col = result.resolved_features.get(feat)
+        if col is None:
+            continue
+        raw = df[col]
+        num = pd.to_numeric(raw, errors="coerce")
+        n_nonnull = int(raw.notna().sum())
+        n_text = int((raw.notna() & num.isna()).sum())
+        n_inf = int(np.isinf(num.to_numpy(dtype="float64", na_value=np.nan)).sum())
+        n_finite = int(np.isfinite(num.to_numpy(dtype="float64", na_value=np.nan)).sum())
+        if n_finite == 0:
+            result.ok = False
+            result.errors.append(
+                f"{stream}: required column '{col}' has no usable numeric values."
+            )
+            continue
+        bad = n_text + n_inf
+        if bad and n_nonnull and bad / n_nonnull > MAX_NON_NUMERIC_FRAC:
+            result.ok = False
+            result.errors.append(
+                f"{stream}: required column '{col}' has {bad} non-numeric or infinite "
+                f"value(s) out of {n_nonnull} ({bad / n_nonnull:.1%}); fix or remove them."
+            )
+        elif bad:
+            result.warnings.append(
+                f"{stream}: required column '{col}' has {bad} non-numeric or infinite "
+                "value(s); those samples are treated as missing."
+            )
 
     # Timestamp — same interpretation as preprocessing (src/timebase.py)
     _clean, tb = normalize_timestamps(df, stream=stream)

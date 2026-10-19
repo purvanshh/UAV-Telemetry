@@ -12,6 +12,7 @@ from typing import BinaryIO, Dict, List, Optional, Tuple, Union
 import pandas as pd
 
 from src.flight_identity import sha256_bytes
+from src.limits import LimitError, get_limits
 from src.schema import STREAM_FILENAME_HINTS, STREAMS
 from src.validation import FlightValidationResult, read_csv_bytes, validate_flight
 
@@ -51,6 +52,56 @@ def _read_bytes(data: BytesLike) -> bytes:
         return bytes(data)
     data.seek(0)
     return data.read()
+
+
+def _too_large_msg(name: str, size: int) -> str:
+    cap = get_limits().max_file_bytes
+    return (
+        f"'{name}' is {size / 1e6:.1f} MB, over the {cap / 1e6:.0f} MB upload limit. "
+        "Trim the log or raise UAV_MAX_UPLOAD_MB on the server."
+    )
+
+
+def check_zip_safety(zf: zipfile.ZipFile) -> None:
+    """Reject archives whose declared contents exceed the resource limits.
+
+    Declared sizes come from the central directory and can lie, so reads are
+    additionally capped while decompressing (see :func:`read_zip_member`).
+    """
+    lim = get_limits()
+    infos = [i for i in zf.infolist() if not i.is_dir()]
+    if len(infos) > lim.max_zip_members:
+        raise LimitError(
+            f"ZIP holds {len(infos)} files; the limit is {lim.max_zip_members}."
+        )
+    total = 0
+    for i in infos:
+        total += i.file_size
+        if i.file_size > lim.max_file_bytes:
+            raise LimitError(
+                f"ZIP member '{i.filename}' would expand to {i.file_size / 1e6:.0f} MB "
+                f"(limit {lim.max_file_bytes / 1e6:.0f} MB)."
+            )
+        if i.compress_size > 0 and i.file_size / i.compress_size > lim.max_zip_ratio:
+            raise LimitError(
+                f"ZIP member '{i.filename}' has a suspicious compression ratio "
+                f"(>{lim.max_zip_ratio:.0f}x); refusing to decompress."
+            )
+    if total > lim.max_zip_total_bytes:
+        raise LimitError(
+            f"ZIP would expand to {total / 1e6:.0f} MB (limit "
+            f"{lim.max_zip_total_bytes / 1e6:.0f} MB)."
+        )
+
+
+def read_zip_member(zf: zipfile.ZipFile, name: str) -> bytes:
+    """Decompress one member, never producing more than the per-file cap."""
+    cap = get_limits().max_file_bytes
+    with zf.open(name) as fh:
+        data = fh.read(cap + 1)
+    if len(data) > cap:
+        raise LimitError(f"ZIP member '{name}' expands past the {cap / 1e6:.0f} MB limit.")
+    return data
 
 
 def _basename_hint(name: str) -> str:
@@ -122,6 +173,10 @@ def load_individual_csvs(
             continue
         raw = _read_bytes(files[stream])
         name = filenames.get(stream) or f"{stream}.csv"
+        if len(raw) > get_limits().max_file_bytes:
+            result.ok = False
+            result.errors.append(_too_large_msg(name, len(raw)))
+            continue
         result.file_sizes[stream] = len(raw)
         result.file_sha256[stream] = sha256_bytes(raw)
         result.filenames[stream] = name
@@ -169,6 +224,10 @@ def load_zip_archive(
     """Extract and map IMU / ATT / BARO CSVs from a ZIP archive."""
     result = UploadResult(ok=True, source="zip")
     raw = _read_bytes(data)
+    if len(raw) > get_limits().max_zip_total_bytes:
+        result.ok = False
+        result.errors.append(_too_large_msg(archive_name, len(raw)))
+        return result
 
     try:
         zf = zipfile.ZipFile(io.BytesIO(raw))
@@ -177,6 +236,12 @@ def load_zip_archive(
         result.errors.append(
             f"'{archive_name}' is not a valid ZIP archive."
         )
+        return result
+    try:
+        check_zip_safety(zf)
+    except LimitError as exc:
+        result.ok = False
+        result.errors.append(str(exc))
         return result
 
     # Collect CSV members (skip macOS junk / directories)
@@ -245,7 +310,12 @@ def load_zip_archive(
         )
 
     for stream, member in assigned.items():
-        member_bytes = zf.read(member)
+        try:
+            member_bytes = read_zip_member(zf, member)
+        except LimitError as exc:
+            result.ok = False
+            result.errors.append(str(exc))
+            continue
         name = Path(member).name
         result.filenames[stream] = name
         result.file_sizes[stream] = len(member_bytes)

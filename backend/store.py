@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import re
 import shutil
+import threading
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
+
+try:  # POSIX advisory locks; absent on Windows (thread lock still applies)
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None  # type: ignore[assignment]
 
 import pandas as pd
 
 from src.event_builder import AnomalyEvent
 from src.flight_identity import compute_identity, find_matches
+from src.limits import InvalidFlightId, validate_flight_id
 from src.report_schema import FlightReport, validate_report
 from src.session_state import new_flight_id
 
@@ -29,6 +40,39 @@ class FlightNotFound(FlightStoreError):
     pass
 
 
+class InvalidFlightIdError(FlightNotFound):
+    """Flight id is not a safe single path component (rejected, never touched)."""
+
+
+_GEN_RE = re.compile(r"^gen-[0-9A-Za-z-]{1,64}$")
+_CURRENT = "CURRENT"
+_locks_guard = threading.Lock()
+_thread_locks: Dict[str, threading.RLock] = {}
+
+
+def _thread_lock(key: str) -> threading.RLock:
+    with _locks_guard:
+        return _thread_locks.setdefault(key, threading.RLock())
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write via a sibling temp file + fsync + ``os.replace`` (all-or-nothing)."""
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    _atomic_write_bytes(path, text.encode("utf-8"))
+
+
 def resolve_data_dir(data_dir: Optional[Path | str] = None) -> Path:
     import os
 
@@ -44,7 +88,39 @@ class FlightStore:
         self.root.mkdir(parents=True, exist_ok=True)
 
     def flight_dir(self, flight_id: str) -> Path:
-        return self.root / flight_id
+        try:
+            validate_flight_id(flight_id)
+        except InvalidFlightId as exc:
+            raise InvalidFlightIdError(str(exc)) from exc
+        d = self.root / flight_id
+        root = self.root.resolve()
+        if d.is_symlink() or not d.resolve().is_relative_to(root) or d.resolve() == root:
+            raise InvalidFlightIdError("Flight id resolves outside the flight store.")
+        return d
+
+    @contextlib.contextmanager
+    def _lock(self, flight_id: str) -> Iterator[None]:
+        """Serialise writers of one flight (threads, and processes via flock)."""
+        d = self.flight_dir(flight_id)
+        with _thread_lock(str(d)):
+            if fcntl is None or not d.is_dir():
+                yield
+                return
+            with open(d / ".lock", "a") as lf:
+                fcntl.flock(lf, fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lf, fcntl.LOCK_UN)
+
+    def _adir(self, d: Path) -> Path:
+        """Directory holding the committed analysis files (legacy: the flight dir)."""
+        ptr = d / _CURRENT
+        if ptr.is_file():
+            name = ptr.read_text().strip()
+            if _GEN_RE.match(name) and (d / name).is_dir():
+                return d / name
+        return d
 
     def exists(self, flight_id: str) -> bool:
         return (self.flight_dir(flight_id) / "meta.json").is_file()
@@ -87,8 +163,12 @@ class FlightStore:
         flight_id: Optional[str] = None,
         file_sha256: Optional[Dict[str, str]] = None,
         duplicate_of: Optional[str] = None,
+        extra_meta: Optional[Dict[str, Any]] = None,
     ) -> str:
-        fid = new_flight_id(flight_id)
+        try:
+            fid = new_flight_id(flight_id)
+        except InvalidFlightId as exc:
+            raise InvalidFlightIdError(str(exc)) from exc
         d = self.flight_dir(fid)
         if d.exists():
             if self.exists(fid):
@@ -96,13 +176,11 @@ class FlightStore:
                     f"flight_id '{fid}' is already in use; refusing to overwrite an "
                     "existing flight. Choose another id or delete it first."
                 )
-            shutil.rmtree(d)
-        d.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(d)  # orphan without meta.json; path validated above
 
         for stream in STREAMS:
             if stream not in frames:
                 raise FlightStoreError(f"Missing frame: {stream}")
-            frames[stream].to_parquet(d / f"{stream}.parquet", index=False)
 
         meta = {
             "flight_id": fid,
@@ -118,7 +196,19 @@ class FlightStore:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "analyzed_at": None,
         }
-        (d / "meta.json").write_text(json.dumps(meta, indent=2))
+        if extra_meta:
+            meta.update(extra_meta)
+        # Build the whole flight privately, then publish it with one rename.
+        tmp = self.root / f".tmp-{uuid.uuid4().hex[:12]}"
+        tmp.mkdir()
+        try:
+            for stream in STREAMS:
+                frames[stream].to_parquet(tmp / f"{stream}.parquet", index=False)
+            (tmp / "meta.json").write_text(json.dumps(meta, indent=2))
+            os.rename(tmp, d)
+        except BaseException:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
         return fid
 
     def identities(self) -> List[tuple]:
@@ -140,7 +230,7 @@ class FlightStore:
                 except FlightStoreError:
                     continue
                 meta["identity"] = ident
-                (child / "meta.json").write_text(json.dumps(meta, indent=2))
+                _atomic_write_text(child / "meta.json", json.dumps(meta, indent=2))
             out.append((meta.get("flight_id", child.name), ident))
         return out
 
@@ -148,8 +238,9 @@ class FlightStore:
         return find_matches(identity, self.identities())
 
     def delete(self, flight_id: str) -> None:
-        d = self.require(flight_id)
-        shutil.rmtree(d)
+        d = self.require(flight_id)  # validated, inside the store, not a symlink
+        with self._lock(flight_id):
+            shutil.rmtree(d)
 
     def load_meta(self, flight_id: str) -> Dict[str, Any]:
         d = self.require(flight_id)
@@ -157,7 +248,7 @@ class FlightStore:
 
     def save_meta(self, flight_id: str, meta: Dict[str, Any]) -> None:
         d = self.require(flight_id)
-        (d / "meta.json").write_text(json.dumps(meta, indent=2))
+        _atomic_write_text(d / "meta.json", json.dumps(meta, indent=2))
 
     def load_frames(self, flight_id: str) -> Dict[str, pd.DataFrame]:
         d = self.require(flight_id)
@@ -181,59 +272,63 @@ class FlightStore:
         report: Optional[FlightReport],
         status: str,
     ) -> None:
+        """Commit one analysis generation atomically.
+
+        Every file is written into a fresh ``gen-*`` directory that nothing reads
+        yet; the ``CURRENT`` pointer is then switched with one ``os.replace``. A
+        failure before the switch leaves the previous generation untouched and
+        removes the half-written one, so readers never see a mixed analysis.
+        """
         d = self.require(flight_id)
-        (d / "analysis_summary.json").write_text(json.dumps(summary, indent=2, default=str))
+        with self._lock(flight_id):
+            gen = f"gen-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}-{uuid.uuid4().hex[:6]}"
+            g = d / gen
+            g.mkdir()
+            try:
+                (g / "analysis_summary.json").write_text(
+                    json.dumps(summary, indent=2, default=str)
+                )
+                if windows is not None:
+                    windows.to_parquet(g / "windows.parquet", index=False)
+                (g / "events.json").write_text(
+                    json.dumps([e.to_dict() for e in events], indent=2)
+                )
+                if events_df is not None:
+                    events_df.to_parquet(g / "events.parquet", index=False)
+                if aligned is not None:
+                    aligned.to_parquet(g / "aligned.parquet", index=False)
+                if report is not None:
+                    (g / "report.json").write_text(
+                        json.dumps(report.to_json_dict(), indent=2, allow_nan=False)
+                    )
+                _atomic_write_text(d / _CURRENT, gen)  # commit point
+            except BaseException:
+                shutil.rmtree(g, ignore_errors=True)
+                raise
 
-        if windows is not None:
-            windows.to_parquet(d / "windows.parquet", index=False)
-        elif (d / "windows.parquet").exists():
-            (d / "windows.parquet").unlink()
+            for old in d.iterdir():
+                if old.is_dir() and _GEN_RE.match(old.name) and old.name != gen:
+                    shutil.rmtree(old, ignore_errors=True)
 
-        events_payload = [e.to_dict() for e in events]
-        (d / "events.json").write_text(json.dumps(events_payload, indent=2))
-
-        if events_df is not None:
-            events_df.to_parquet(d / "events.parquet", index=False)
-        elif (d / "events.parquet").exists():
-            (d / "events.parquet").unlink()
-
-        if aligned is not None:
-            aligned.to_parquet(d / "aligned.parquet", index=False)
-        elif (d / "aligned.parquet").exists():
-            (d / "aligned.parquet").unlink()
-
-        if report is not None:
-            (d / "report.json").write_text(
-                json.dumps(report.to_json_dict(), indent=2, allow_nan=False)
-            )
-        elif (d / "report.json").exists():
-            (d / "report.json").unlink()
-
-        # Clear prior AI when re-analyzing
-        for name in ("ai_diagnostic.json", "ai_chat.json"):
-            p = d / name
-            if p.exists():
-                p.unlink()
-
-        meta = self.load_meta(flight_id)
-        meta["status"] = status
-        meta["analyzed_at"] = datetime.now(timezone.utc).isoformat()
-        self.save_meta(flight_id, meta)
+            meta = self.load_meta(flight_id)
+            meta["status"] = status
+            meta["analyzed_at"] = datetime.now(timezone.utc).isoformat()
+            self.save_meta(flight_id, meta)
 
     def load_windows(self, flight_id: str) -> Optional[pd.DataFrame]:
-        path = self.require(flight_id) / "windows.parquet"
+        path = self._adir(self.require(flight_id)) / "windows.parquet"
         if not path.is_file():
             return None
         return pd.read_parquet(path)
 
     def load_aligned(self, flight_id: str) -> Optional[pd.DataFrame]:
-        path = self.require(flight_id) / "aligned.parquet"
+        path = self._adir(self.require(flight_id)) / "aligned.parquet"
         if not path.is_file():
             return None
         return pd.read_parquet(path)
 
     def load_events(self, flight_id: str) -> List[AnomalyEvent]:
-        path = self.require(flight_id) / "events.json"
+        path = self._adir(self.require(flight_id)) / "events.json"
         if not path.is_file():
             return []
         raw = json.loads(path.read_text())
@@ -254,45 +349,58 @@ class FlightStore:
         return events
 
     def load_events_df(self, flight_id: str) -> Optional[pd.DataFrame]:
-        path = self.require(flight_id) / "events.parquet"
+        path = self._adir(self.require(flight_id)) / "events.parquet"
         if not path.is_file():
             return None
         return pd.read_parquet(path)
 
     def load_analysis_summary(self, flight_id: str) -> Optional[Dict[str, Any]]:
-        path = self.require(flight_id) / "analysis_summary.json"
+        path = self._adir(self.require(flight_id)) / "analysis_summary.json"
         if not path.is_file():
             return None
         return json.loads(path.read_text())
 
     def load_report(self, flight_id: str) -> Optional[FlightReport]:
-        path = self.require(flight_id) / "report.json"
+        path = self._adir(self.require(flight_id)) / "report.json"
         if not path.is_file():
             return None
         return validate_report(json.loads(path.read_text()))
 
     def save_report(self, flight_id: str, report: FlightReport) -> None:
         d = self.require(flight_id)
-        (d / "report.json").write_text(
-            json.dumps(report.to_json_dict(), indent=2, allow_nan=False)
-        )
+        with self._lock(flight_id):
+            _atomic_write_text(
+                self._adir(d) / "report.json",
+                json.dumps(report.to_json_dict(), indent=2, allow_nan=False),
+            )
 
     def save_ai_diagnostic(self, flight_id: str, diagnostic: Dict[str, Any]) -> None:
         d = self.require(flight_id)
-        (d / "ai_diagnostic.json").write_text(json.dumps(diagnostic, indent=2))
+        with self._lock(flight_id):
+            _atomic_write_text(self._adir(d) / "ai_diagnostic.json", json.dumps(diagnostic, indent=2))
 
     def load_ai_diagnostic(self, flight_id: str) -> Optional[Dict[str, Any]]:
-        path = self.require(flight_id) / "ai_diagnostic.json"
+        path = self._adir(self.require(flight_id)) / "ai_diagnostic.json"
         if not path.is_file():
             return None
         return json.loads(path.read_text())
 
+    def save_explanation(self, flight_id: str, data: Dict[str, Any]) -> None:
+        d = self.require(flight_id)
+        with self._lock(flight_id):
+            _atomic_write_text(self._adir(d) / "operator_explanation.json", json.dumps(data, indent=2))
+
+    def load_explanation(self, flight_id: str) -> Optional[Dict[str, Any]]:
+        path = self._adir(self.require(flight_id)) / "operator_explanation.json"
+        return json.loads(path.read_text()) if path.is_file() else None
+
     def save_chat(self, flight_id: str, chat: Dict[str, Any]) -> None:
         d = self.require(flight_id)
-        (d / "ai_chat.json").write_text(json.dumps(chat, indent=2))
+        with self._lock(flight_id):
+            _atomic_write_text(self._adir(d) / "ai_chat.json", json.dumps(chat, indent=2))
 
     def load_chat(self, flight_id: str) -> Dict[str, Any]:
-        path = self.require(flight_id) / "ai_chat.json"
+        path = self._adir(self.require(flight_id)) / "ai_chat.json"
         if path.is_file():
             return json.loads(path.read_text())
         return {"flight_id": flight_id, "messages": [], "selected_event_id": None}
