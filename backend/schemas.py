@@ -32,6 +32,8 @@ class FlightListItem(BaseModel):
     source: Optional[str] = None
     created_at: Optional[str] = None
     filenames: Dict[str, str] = Field(default_factory=dict)
+    verdict_state: Optional[str] = None
+    verdict_headline: Optional[str] = None
 
 
 class UploadResponse(BaseModel):
@@ -72,6 +74,7 @@ class AnalyzeResponse(BaseModel):
     score_max: Optional[float] = None
     coverage_status: Optional[str] = None
     data_quality: Optional[Dict[str, Any]] = None
+    verdict: Optional[Dict[str, Any]] = None
 
 
 class FlightDetail(BaseModel):
@@ -90,6 +93,7 @@ class FlightDetail(BaseModel):
     event_count: int = 0
     duplicate_of: Optional[str] = None
     file_sha256: Dict[str, str] = Field(default_factory=dict)
+    verdict: Optional[Dict[str, Any]] = None
 
 
 class DiagnosticRequest(BaseModel):

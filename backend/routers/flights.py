@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel
 
 from backend.deps import get_store
 from backend.schemas import (
@@ -26,6 +27,23 @@ from src.evidence_builder import build_evidence_pack
 from src.event_builder import DEFAULT_MAX_GAP_S
 from src.flight_identity import BLOCKING, PARTIAL, SIMILAR, compute_identity, duplicate_message
 from src.inference_service import analyze_flight
+from src.combined_ingest import load_combined, mapping_for_storage
+from src.combined_preview import (
+    analyze_combined,
+    build_combined_preview,
+    parse_assignments as _parse_assignments_raw,
+    preview_from_analysis,
+)
+from src.explain_llm import DISCLOSURE as EXPLAIN_DISCLOSURE, generate_explanation
+from src.limits import get_limits
+from src.operator_view import (
+    build_operator_report,
+    build_overview,
+    build_timeline,
+    describe_event,
+    event_context,
+    verdict_from_summary,
+)
 from src.llm_service import LLMError, LLMService, api_configured, attach_ai_to_report
 from src.report_export import events_to_csv_bytes, report_to_json_bytes, windows_to_csv_bytes
 from src.upload import load_individual_csvs, load_zip_archive
@@ -39,6 +57,34 @@ from src.visualization import (
 router = APIRouter(prefix="/api/flights", tags=["flights"])
 
 
+def _parse_assignments(raw: Optional[str]) -> Dict[str, Any]:
+    try:
+        return _parse_assignments_raw(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+async def read_upload_capped(upload: UploadFile, limit: int) -> bytes:
+    """Read an upload in chunks, stopping as soon as it exceeds ``limit`` bytes."""
+    chunks: List[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"'{upload.filename or 'file'}' exceeds the {limit / 1e6:.0f} MB "
+                    "upload limit."
+                ),
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _store_exc(exc: Exception) -> HTTPException:
     if isinstance(exc, FlightNotFound):
         return HTTPException(status_code=404, detail=str(exc))
@@ -47,7 +93,15 @@ def _store_exc(exc: Exception) -> HTTPException:
 
 @router.get("", response_model=List[FlightListItem])
 def list_flights(store: FlightStore = Depends(get_store)) -> List[FlightListItem]:
-    return [FlightListItem(**item) for item in store.list_flights()]
+    out = []
+    for item in store.list_flights():
+        try:
+            v = verdict_from_summary(store.load_analysis_summary(item["flight_id"]))
+            item = {**item, "verdict_state": v["state"], "verdict_headline": v["headline"]}
+        except Exception:  # a damaged flight must not break the list
+            pass
+        out.append(FlightListItem(**item))
+    return out
 
 
 @router.post("/upload", response_model=UploadResponse)
@@ -61,13 +115,13 @@ async def upload_flight(
     store: FlightStore = Depends(get_store),
 ) -> UploadResponse:
     if zip_file is not None:
-        raw = await zip_file.read()
+        raw = await read_upload_capped(zip_file, get_limits().max_zip_total_bytes)
         result = load_zip_archive(raw, archive_name=zip_file.filename or "upload.zip")
     elif imu is not None and att is not None and baro is not None:
         files = {
-            "IMU": await imu.read(),
-            "ATT": await att.read(),
-            "BARO": await baro.read(),
+            "IMU": await read_upload_capped(imu, get_limits().max_file_bytes),
+            "ATT": await read_upload_capped(att, get_limits().max_file_bytes),
+            "BARO": await read_upload_capped(baro, get_limits().max_file_bytes),
         }
         filenames = {
             "IMU": imu.filename or "IMU.csv",
@@ -80,7 +134,17 @@ async def upload_flight(
             status_code=400,
             detail="Provide either zip_file or all three of imu, att, and baro.",
         )
+    return _finish_upload(result, flight_id, allow_duplicate, store)
 
+
+def _finish_upload(
+    result,
+    flight_id: Optional[str],
+    allow_duplicate: bool,
+    store: FlightStore,
+    extra_meta: Optional[Dict[str, Any]] = None,
+) -> UploadResponse:
+    """Duplicate check + persistence shared by the three-file, ZIP and combined uploads."""
     if not result.ok:
         return UploadResponse(
             ok=False,
@@ -133,6 +197,7 @@ async def upload_flight(
             flight_id=flight_id,
             file_sha256=dict(result.file_sha256),
             duplicate_of=blocking[0]["flight_id"] if blocking else None,
+            extra_meta=extra_meta,
         )
     except FlightStoreError as exc:
         return UploadResponse(
@@ -160,6 +225,88 @@ async def upload_flight(
     )
 
 
+
+
+@router.post("/combined/preview")
+async def combined_preview(
+    file: UploadFile = File(...),
+    assignments: Optional[str] = Form(None),
+    llm_consent: bool = Form(False),
+) -> Any:
+    """Inspect a combined CSV and propose a validated column mapping. Stores nothing."""
+    raw = await read_upload_capped(file, get_limits().max_file_bytes)
+    return build_combined_preview(raw, file.filename or "combined.csv", _parse_assignments(assignments), llm_consent)
+
+
+@router.post("/combined/upload", response_model=UploadResponse)
+async def combined_upload(
+    file: UploadFile = File(...),
+    assignments: Optional[str] = Form(None),
+    flight_id: Optional[str] = Form(None),
+    allow_duplicate: bool = Form(False),
+    store: FlightStore = Depends(get_store),
+) -> UploadResponse:
+    """Store a combined CSV once its mapping is fully valid.
+
+    The mapping is rebuilt server-side from deterministic rules plus the user's explicit
+    ``assignments``; AI suggestions are never trusted from the client.
+    """
+    raw = await read_upload_capped(file, get_limits().max_file_bytes)
+    result, insp, mapping = load_combined(
+        raw, file.filename or "combined.csv", assignments=_parse_assignments(assignments)
+    )
+    if not result.ok or insp is None or mapping is None:
+        return UploadResponse(
+            ok=False, source="combined", filenames=dict(result.filenames), file_sizes=dict(result.file_sizes),
+            warnings=list(result.all_warnings), errors=list(result.all_errors),
+            validation=result.validation.to_dict() if result.validation else None,
+        )
+    return _finish_upload(
+        result, flight_id, allow_duplicate, store, extra_meta={"combined": mapping_for_storage(mapping, insp)}
+    )
+
+
+@router.post("/combined/auto")
+async def combined_auto(
+    file: UploadFile = File(...),
+    assignments: Optional[str] = Form(None),
+    llm_consent: bool = Form(False),
+    flight_id: Optional[str] = Form(None),
+    allow_duplicate: bool = Form(False),
+    store: FlightStore = Depends(get_store),
+) -> Any:
+    """Upload → schema analysis → validation → (if fully compatible) store and analyse.
+
+    ``stage`` is one of ``analyzed`` | ``analysis_failed`` | ``needs_input`` | ``incompatible`` |
+    ``invalid`` | ``not_stored``. Anything other than ``analyzed``/``analysis_failed`` stores nothing
+    and runs no inference: a file the deployed detector cannot use is never reported as analysed.
+    """
+    raw = await read_upload_capped(file, get_limits().max_file_bytes)
+    name = file.filename or "combined.csv"
+    a = analyze_combined(raw, name, _parse_assignments(assignments), llm_consent)
+    out: Dict[str, Any] = preview_from_analysis(a, name)
+    out["flight_id"] = None
+    if not a.assessment["compatible"] or a.result is None or a.insp is None or a.mapping is None:
+        out["stage"] = a.assessment["outcome"]
+        out["stored"] = False
+        return out
+
+    up = _finish_upload(
+        a.result, flight_id, allow_duplicate, store,
+        extra_meta={"combined": mapping_for_storage(a.mapping, a.insp, a.llm.to_dict())},
+    )
+    if not up.ok or not up.flight_id:
+        out.update(stage="not_stored", stored=False, upload_errors=up.errors, duplicate_of=up.duplicate_of,
+                   duplicate_kind=up.duplicate_kind)
+        return out
+    out.update(stored=True, flight_id=up.flight_id, upload_warnings=up.warnings)
+    analysis = _run_analysis(up.flight_id, store, DEFAULT_MAX_GAP_S)
+    out["analysis"] = {"ok": analysis.ok, "status": analysis.status, "n_events": analysis.n_events,
+                       "n_windows": analysis.n_windows, "errors": analysis.errors, "verdict": analysis.verdict}
+    out["stage"] = "analyzed" if analysis.ok else "analysis_failed"
+    return out
+
+
 @router.get("/{flight_id}", response_model=FlightDetail)
 def get_flight(
     flight_id: str, store: FlightStore = Depends(get_store)
@@ -181,6 +328,7 @@ def get_flight(
         analyzed_at=meta.get("analyzed_at"),
         analysis=store.load_analysis_summary(flight_id),
         has_report=store.load_report(flight_id) is not None,
+        verdict=verdict_from_summary(store.load_analysis_summary(flight_id)),
         has_ai_diagnostic=store.load_ai_diagnostic(flight_id) is not None,
         event_count=len(events),
         duplicate_of=meta.get("duplicate_of"),
@@ -199,12 +347,7 @@ def delete_flight(
     return {"status": "deleted", "flight_id": flight_id}
 
 
-@router.post("/{flight_id}/analyze", response_model=AnalyzeResponse)
-def analyze(
-    flight_id: str,
-    body: AnalyzeRequest = AnalyzeRequest(),
-    store: FlightStore = Depends(get_store),
-) -> AnalyzeResponse:
+def _run_analysis(flight_id: str, store: FlightStore, max_gap_s: float) -> AnalyzeResponse:
     try:
         frames = store.load_frames(flight_id)
         meta = store.load_meta(flight_id)
@@ -215,7 +358,7 @@ def analyze(
         frames,
         flight_id=flight_id,
         upload_warnings=list(meta.get("warnings") or []),
-        max_gap_s=float(body.max_gap_s or DEFAULT_MAX_GAP_S),
+        max_gap_s=float(max_gap_s or DEFAULT_MAX_GAP_S),
         flight_meta=meta,
     )
 
@@ -255,7 +398,138 @@ def analyze(
         score_max=result.score_max,
         coverage_status=(result.data_quality or {}).get("coverage_status"),
         data_quality=result.data_quality,
+        verdict=verdict_from_summary(result.summary_dict()),
     )
+
+
+@router.post("/{flight_id}/analyze", response_model=AnalyzeResponse)
+def analyze(
+    flight_id: str,
+    body: AnalyzeRequest = AnalyzeRequest(),
+    store: FlightStore = Depends(get_store),
+) -> AnalyzeResponse:
+    return _run_analysis(flight_id, store, body.max_gap_s)
+
+
+def _operator_inputs(flight_id: str, store: FlightStore):
+    try:
+        meta = store.load_meta(flight_id)
+        return (
+            meta,
+            store.load_report(flight_id),
+            store.load_analysis_summary(flight_id),
+            store.load_aligned(flight_id),
+        )
+    except FlightNotFound as exc:
+        raise _store_exc(exc) from exc
+
+
+@router.get("/{flight_id}/overview")
+def flight_overview(flight_id: str, store: FlightStore = Depends(get_store)) -> Any:
+    """Operator summary: verdict, coverage, chronological events (read-only projection)."""
+    meta, report, summary, aligned = _operator_inputs(flight_id, store)
+    return build_overview(meta=meta, report=report, summary=summary, aligned=aligned)
+
+
+@router.get("/{flight_id}/timeline")
+def flight_timeline(flight_id: str, store: FlightStore = Depends(get_store)) -> Any:
+    _meta, report, _summary, aligned = _operator_inputs(flight_id, store)
+    if report is None:
+        raise HTTPException(status_code=404, detail="No analysis for this flight yet.")
+    return build_timeline(report, aligned)
+
+
+@router.get("/{flight_id}/events/{event_id}/detail")
+def event_detail(
+    flight_id: str, event_id: str, store: FlightStore = Depends(get_store)
+) -> Any:
+    _meta, report, _summary, aligned = _operator_inputs(flight_id, store)
+    if report is None:
+        raise HTTPException(status_code=404, detail="No analysis for this flight yet.")
+    try:
+        return describe_event(report, event_id, aligned)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown event_id: {event_id}")
+
+
+@router.get("/{flight_id}/events/{event_id}/context")
+def event_context_route(
+    flight_id: str, event_id: str, store: FlightStore = Depends(get_store)
+) -> Any:
+    """Channel values around one event (before / during / after) for the timeline chart."""
+    _meta, report, _summary, aligned = _operator_inputs(flight_id, store)
+    if report is None:
+        raise HTTPException(status_code=404, detail="No analysis for this flight yet.")
+    try:
+        return event_context(report, event_id, aligned)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown event_id: {event_id}")
+
+
+@router.get("/{flight_id}/telemetry")
+def raw_telemetry(
+    flight_id: str,
+    start_s: Optional[float] = Query(None),
+    end_s: Optional[float] = Query(None),
+    limit: int = Query(500, ge=1, le=2000),
+    store: FlightStore = Depends(get_store),
+) -> Any:
+    """Aligned 10 Hz telemetry rows (advanced view). Capped; log-clock seconds."""
+    try:
+        aligned = store.load_aligned(flight_id)
+    except FlightNotFound as exc:
+        raise _store_exc(exc) from exc
+    if aligned is None:
+        raise HTTPException(status_code=404, detail="No aligned telemetry yet.")
+    df = aligned
+    if start_s is not None:
+        df = df[df["_t_s"] >= start_s]
+    if end_s is not None:
+        df = df[df["_t_s"] <= end_s]
+    total = int(len(df))
+    df = df.head(limit)
+    rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
+    return {"columns": list(df.columns), "rows": rows, "total_rows": total, "returned": len(rows)}
+
+
+@router.get("/{flight_id}/operator-report")
+def operator_report(flight_id: str, store: FlightStore = Depends(get_store)) -> Any:
+    """Plain-language report built only from stored, verified results (no LLM)."""
+    meta, report, summary, aligned = _operator_inputs(flight_id, store)
+    if report is None:
+        raise HTTPException(status_code=404, detail="No analysis for this flight yet.")
+    return build_operator_report(meta=meta, report=report, summary=summary, aligned=aligned)
+
+
+class ExplainRequest(BaseModel):
+    consent: bool = False
+
+
+@router.get("/{flight_id}/explanation")
+def get_explanation(flight_id: str, store: FlightStore = Depends(get_store)) -> Any:
+    try:
+        saved = store.load_explanation(flight_id)
+    except FlightNotFound as exc:
+        raise _store_exc(exc) from exc
+    return saved or {"status": "not_generated", "events": [], "disclosure": EXPLAIN_DISCLOSURE,
+                     "configured": api_configured()}
+
+
+@router.post("/{flight_id}/explanation")
+def create_explanation(
+    flight_id: str, body: ExplainRequest, store: FlightStore = Depends(get_store)
+) -> Any:
+    """Optional AI wording for the verified events. Requires explicit consent; never alters results."""
+    if not body.consent:
+        raise HTTPException(status_code=400, detail="Consent is required: " + EXPLAIN_DISCLOSURE)
+    meta, report, summary, aligned = _operator_inputs(flight_id, store)
+    if report is None:
+        raise HTTPException(status_code=400, detail="Analyze the flight first.")
+    op = build_operator_report(meta=meta, report=report, summary=summary, aligned=aligned)
+    result = generate_explanation(op)
+    if result["status"] == "ok":
+        store.save_explanation(flight_id, result)
+    return result
 
 
 @router.get("/{flight_id}/windows")
