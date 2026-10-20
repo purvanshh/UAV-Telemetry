@@ -247,3 +247,13 @@ Full OpenAPI: `/docs`.
 ## License / use
 
 Intended for local research and engineering review of UAV telemetry. Keep secrets out of git and treat detector flags as statistical exceedances, not confirmed hardware faults.
+
+
+---
+
+## Operator-first UI, combined CSV upload, hardening
+
+- **Screens:** `/` flights · `/flights/[id]` overview (verdict, coverage, events) · `/timeline` (event list, chart before/during/after, detail) · `/reports` (operator report, collapsible technical appendix) · `/advanced` (scores, raw telemetry, provenance). Verdicts: anomalies detected / no alerts (adequate coverage) / no alerts (limited or unknown coverage) / analysis failed / insufficient data. "No alerts" is never presented as normal or safe.
+- **Combined CSV** (`/upload` → "One combined CSV", `POST /api/flights/combined/{preview,upload}`): `src/combined_ingest.py` maps columns to the existing IMU/ATT/BARO schema (deterministic aliases → optional GPT-4o mini proposals in `src/schema_llm.py` → user confirmation with explicit units), then reuses the existing validator, timebase and pipeline. Files that lack signals the deployed model requires (e.g. yaw, desired roll/pitch, pressure) are previewable but not stored or scored. `rc_*` inputs are never mapped to desired attitude; units are never inferred from header text.
+- **AI use is optional and consented:** schema suggestions (names, ≤5 samples/column) and event wording (`src/explain_llm.py`) never alter detector output.
+- **Hardening:** flight-ID validation, upload/ZIP limits (`src/limits.py`), generation-based atomic analysis storage with locking, non-finite scores raise, `torch.load(weights_only=True)` with no implicit artifact rebuild, strict numeric validation.

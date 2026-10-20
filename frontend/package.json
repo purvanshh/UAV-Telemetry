@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test tests/format.test.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "next": "^15.5.9",
