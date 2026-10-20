@@ -2,16 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
-import {
-  api,
-  ApiError,
-  ArtifactsStatus,
-  FlightListItem,
-  clearLastFlightId,
-  setLastFlightId,
-} from "@/lib/api";
+import { api, ApiError, ArtifactsStatus, FlightListItem, clearLastFlightId } from "@/lib/api";
+import { verdictLabel, verdictTone } from "@/lib/format";
 
 function formatWhen(iso?: string | null) {
   if (!iso) return "—";
@@ -22,44 +15,37 @@ function formatWhen(iso?: string | null) {
   }
 }
 
-export default function OverviewPage() {
-  const router = useRouter();
+const SOURCE: Record<string, string> = { individual: "Separate files", zip: "ZIP", combined: "Combined CSV" };
+const CHIP: Record<string, string> = { attention: "s-attention", caution: "s-caution", error: "s-error", neutral: "" };
+
+export default function FlightsPage() {
   const [artifacts, setArtifacts] = useState<ArtifactsStatus | null>(null);
-  const [flights, setFlights] = useState<FlightListItem[]>([]);
+  const [flights, setFlights] = useState<FlightListItem[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refreshFlights = useCallback(async () => {
+  const refresh = useCallback(async () => {
     try {
       setFlights(await api.listFlights());
     } catch {
       setFlights([]);
+      setError("The analysis service is not reachable.");
     }
   }, []);
 
   useEffect(() => {
-    api.artifacts().then(setArtifacts).catch(() =>
-      setArtifacts({
-        ready: false,
-        missing: ["(API unreachable)"],
-        model_dir: "",
-        features: [],
-        warnings: [],
-      })
-    );
-    refreshFlights();
-  }, [refreshFlights]);
+    api.artifacts().then(setArtifacts).catch(() => undefined);
+    refresh();
+  }, [refresh]);
 
-  const analyzed = flights.filter((f) => f.status === "analyzed").length;
-
-  async function deleteFlight(id: string) {
+  async function remove(id: string) {
     if (!window.confirm(`Delete saved flight "${id}"? This cannot be undone.`)) return;
     setDeletingId(id);
     setError(null);
     try {
       await api.deleteFlight(id);
       clearLastFlightId(id);
-      await refreshFlights();
+      await refresh();
     } catch (err) {
       setError(err instanceof ApiError || err instanceof Error ? err.message : "Delete failed");
     } finally {
@@ -67,122 +53,79 @@ export default function OverviewPage() {
     }
   }
 
-  function openFlight(id: string) {
-    setLastFlightId(id);
-    router.push(`/flights/${id}`);
-  }
-
   return (
     <>
       <AppNav />
       <main>
-        <section className="hero">
-          <span className="kicker">Workspace</span>
-          <h1>Overview</h1>
-          <p>
-            Saved flights stay on disk. Open one to score the LSTM autoencoder, read events,
-            and continue into diagnostics or exports.
-          </p>
-        </section>
-
-        <section className="grid-metrics">
-          <div className="metric">
-            <div className="label">Saved flights</div>
-            <div className="value">{flights.length}</div>
+        <div className="page-head row between">
+          <div>
+            <h1>Flights</h1>
+            <p className="sub">Open a flight to see what was detected, when, and what to review.</p>
           </div>
-          <div className="metric">
-            <div className="label">Analyzed</div>
-            <div className="value">{analyzed}</div>
-          </div>
-          <div className="metric">
-            <div className="label">Awaiting analysis</div>
-            <div className="value">{Math.max(0, flights.length - analyzed)}</div>
-          </div>
-          <div className="metric">
-            <div className="label">Detector</div>
-            <div className="value" style={{ fontSize: "1rem" }}>
-              {artifacts?.ready ? artifacts.variant || "ready" : "offline"}
-            </div>
-          </div>
-        </section>
+          <Link className="btn btn-primary" href="/upload">
+            New analysis
+          </Link>
+        </div>
 
         {artifacts && !artifacts.ready && (
-          <div className="alert alert-error">
-            Missing artifacts: {(artifacts.missing || []).join(", ") || artifacts.error}
+          <div className="alert alert-error" role="alert">
+            The detector is not available ({(artifacts.missing || []).join(", ") || artifacts.error}). Flights
+            cannot be analysed until this is fixed.
           </div>
         )}
         {error && <div className="alert alert-error">{error}</div>}
 
-        <section className="panel">
-          <div className="row" style={{ justifyContent: "space-between", marginBottom: "0.75rem" }}>
-            <div>
-              <h2 style={{ marginBottom: 4 }}>Recent flights</h2>
-              <p className="muted" style={{ margin: 0 }}>
-                Stored under <span className="mono">data/flights/</span>.
-              </p>
-            </div>
-            <div className="row">
-              <button type="button" className="btn" onClick={() => refreshFlights()}>
-                Refresh
-              </button>
-              <Link className="btn btn-primary" href="/upload">
-                Upload telemetry
-              </Link>
-            </div>
-          </div>
-
-          {!flights.length ? (
-            <p className="muted">No saved flights yet. Start from New Analysis.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data">
-                <thead>
-                  <tr>
-                    <th>Flight ID</th>
-                    <th>Status</th>
-                    <th>Source</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+        {flights === null && <p className="muted">Loading…</p>}
+        {flights && flights.length === 0 && !error && (
+          <p className="muted">No flights yet. Start with a new analysis.</p>
+        )}
+        {flights && flights.length > 0 && (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th>Flight</th>
+                  <th>Result</th>
+                  <th>Source</th>
+                  <th>Added</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {flights.map((f) => (
+                  <tr key={f.flight_id}>
+                    <td>
+                      <Link href={`/flights/${encodeURIComponent(f.flight_id)}`} className="mono">
+                        {f.flight_id}
+                      </Link>
+                    </td>
+                    <td>
+                      <span className={`chip ${CHIP[verdictTone(f.verdict_state)]}`}>
+                        {verdictLabel(f.verdict_state)}
+                      </span>
+                    </td>
+                    <td>{f.source ? SOURCE[f.source] ?? f.source : "—"}</td>
+                    <td>{formatWhen(f.created_at)}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-danger"
+                        disabled={deletingId === f.flight_id}
+                        onClick={() => remove(f.flight_id)}
+                      >
+                        {deletingId === f.flight_id ? "Deleting…" : "Delete"}
+                      </button>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {flights.map((f) => (
-                    <tr key={f.flight_id}>
-                      <td className="mono">{f.flight_id}</td>
-                      <td>
-                        <span className="chip">{f.status}</span>
-                      </td>
-                      <td>{f.source || "—"}</td>
-                      <td>{formatWhen(f.created_at)}</td>
-                      <td>
-                        <div className="row">
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={() => openFlight(f.flight_id)}
-                          >
-                            Open
-                          </button>
-                          <Link className="btn" href={`/flights/${f.flight_id}/reports`}>
-                            Reports
-                          </Link>
-                          <button
-                            type="button"
-                            className="btn btn-danger"
-                            disabled={deletingId === f.flight_id}
-                            onClick={() => deleteFlight(f.flight_id)}
-                          >
-                            {deletingId === f.flight_id ? "Deleting…" : "Delete"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="muted small" style={{ marginTop: "1.5rem" }}>
+          “No alerts” means the detector flagged nothing in the part of the flight it could assess. It does not
+          mean the aircraft was safe.
+        </p>
       </main>
     </>
   );
