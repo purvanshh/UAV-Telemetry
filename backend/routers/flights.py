@@ -47,6 +47,7 @@ from src.operator_view import (
 from src.llm_service import LLMError, LLMService, api_configured, attach_ai_to_report
 from src.report_export import events_to_csv_bytes, report_to_json_bytes, windows_to_csv_bytes
 from src.upload import load_individual_csvs, load_zip_archive
+from src.upload_summary import build_upload_summary
 from src.visualization import (
     baro_context_figure,
     per_feature_error_figure,
@@ -198,6 +199,7 @@ def _finish_upload(
             file_sha256=dict(result.file_sha256),
             duplicate_of=blocking[0]["flight_id"] if blocking else None,
             extra_meta=extra_meta,
+            context=getattr(result, "context", None),
         )
     except FlightStoreError as exc:
         return UploadResponse(
@@ -262,7 +264,7 @@ async def combined_upload(
             validation=result.validation.to_dict() if result.validation else None,
         )
     return _finish_upload(
-        result, flight_id, allow_duplicate, store, extra_meta={"combined": mapping_for_storage(mapping, insp)}
+        result, flight_id, allow_duplicate, store, extra_meta={"combined": mapping_for_storage(mapping, insp), "baro_absent": result.baro_absent}
     )
 
 
@@ -293,7 +295,8 @@ async def combined_auto(
 
     up = _finish_upload(
         a.result, flight_id, allow_duplicate, store,
-        extra_meta={"combined": mapping_for_storage(a.mapping, a.insp, a.llm.to_dict())},
+        extra_meta={"combined": mapping_for_storage(a.mapping, a.insp, a.llm.to_dict()),
+                    "baro_absent": a.result.baro_absent},
     )
     if not up.ok or not up.flight_id:
         out.update(stage="not_stored", stored=False, upload_errors=up.errors, duplicate_of=up.duplicate_of,
@@ -334,6 +337,22 @@ def get_flight(
         duplicate_of=meta.get("duplicate_of"),
         file_sha256=meta.get("file_sha256") or {},
     )
+
+
+@router.get("/{flight_id}/upload-summary")
+def flight_upload_summary(flight_id: str, store: FlightStore = Depends(get_store)) -> Any:
+    """Pre-analysis validation summary: what was found in each uploaded file.
+
+    Returns a structured, operator-readable summary of the uploaded files —
+    rows, columns, timestamp quality, missing required signals, and warnings.
+    Displayed in the UI before the operator clicks 'Run analysis'. Read-only.
+    """
+    try:
+        meta = store.load_meta(flight_id)
+    except FlightNotFound as exc:
+        raise _store_exc(exc) from exc
+    validation = meta.get("validation") or {}
+    return build_upload_summary(meta, validation)
 
 
 @router.delete("/{flight_id}")
@@ -490,6 +509,26 @@ def raw_telemetry(
     df = df.head(limit)
     rows = df.astype(object).where(df.notna(), None).to_dict(orient="records")
     return {"columns": list(df.columns), "rows": rows, "total_rows": total, "returned": len(rows)}
+
+
+@router.get("/{flight_id}/context")
+def context_columns(
+    flight_id: str, limit: int = Query(200, ge=1, le=2000), store: FlightStore = Depends(get_store)
+) -> Any:
+    """Raw context columns (status flags, commands, motors, ...) kept from a combined upload."""
+    try:
+        ctx = store.load_context(flight_id)
+        meta = store.load_meta(flight_id)
+    except FlightNotFound as exc:
+        raise _store_exc(exc) from exc
+    cols = ((meta.get("combined") or {}).get("mapping") or {}).get("columns", [])
+    info = {c["source_column"]: {"role": c.get("profile_role"), "status": c.get("semantic_status"),
+                                 "handling": c.get("handling")} for c in cols if c.get("ignored")}
+    if ctx is None:
+        return {"columns": [], "rows": [], "total_rows": 0, "returned": 0, "info": info}
+    head = ctx.head(limit)
+    rows = head.astype(object).where(head.notna(), None).to_dict(orient="records")
+    return {"columns": list(ctx.columns), "rows": rows, "total_rows": int(len(ctx)), "returned": len(rows), "info": info}
 
 
 @router.get("/{flight_id}/operator-report")

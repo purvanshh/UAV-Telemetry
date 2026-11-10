@@ -164,6 +164,7 @@ class FlightStore:
         file_sha256: Optional[Dict[str, str]] = None,
         duplicate_of: Optional[str] = None,
         extra_meta: Optional[Dict[str, Any]] = None,
+        context: Optional[pd.DataFrame] = None,
     ) -> str:
         try:
             fid = new_flight_id(flight_id)
@@ -178,8 +179,9 @@ class FlightStore:
                 )
             shutil.rmtree(d)  # orphan without meta.json; path validated above
 
+        baro_absent = bool((extra_meta or {}).get("baro_absent"))
         for stream in STREAMS:
-            if stream not in frames:
+            if stream not in frames and not (stream == "BARO" and baro_absent):
                 raise FlightStoreError(f"Missing frame: {stream}")
 
         meta = {
@@ -203,7 +205,10 @@ class FlightStore:
         tmp.mkdir()
         try:
             for stream in STREAMS:
-                frames[stream].to_parquet(tmp / f"{stream}.parquet", index=False)
+                if stream in frames:
+                    frames[stream].to_parquet(tmp / f"{stream}.parquet", index=False)
+            if context is not None and len(context):
+                context.to_parquet(tmp / "CONTEXT.parquet", index=False)
             (tmp / "meta.json").write_text(json.dumps(meta, indent=2))
             os.rename(tmp, d)
         except BaseException:
@@ -253,12 +258,19 @@ class FlightStore:
     def load_frames(self, flight_id: str) -> Dict[str, pd.DataFrame]:
         d = self.require(flight_id)
         frames = {}
+        baro_absent = bool(json.loads((d / "meta.json").read_text()).get("baro_absent"))
         for stream in STREAMS:
             path = d / f"{stream}.parquet"
+            if stream == "BARO" and baro_absent and not path.is_file():
+                continue  # declared optional at upload; the adapter adds a timestamps-only scaffold
             if not path.is_file():
                 raise FlightStoreError(f"Missing {stream} parquet for {flight_id}")
             frames[stream] = pd.read_parquet(path)
         return frames
+
+    def load_context(self, flight_id: str) -> Optional[pd.DataFrame]:
+        path = self.require(flight_id) / "CONTEXT.parquet"
+        return pd.read_parquet(path) if path.is_file() else None
 
     def save_analysis(
         self,
