@@ -1,25 +1,424 @@
 {
   "version": 1,
-  "note": "A profile is explicit dataset configuration: it states what a known CSV layout's columns mean and their units. A file is matched only when ALL signature headers are present. A column whose unit is null is deliberately unresolved: add the documented unit here once it is known. Never add a unit that is not documented for the dataset.",
+  "note": "Profiles are explicit dataset configuration. 'unit_status'/'frame_status' of 'unverified' means the value is a hypothesis: it is displayed but never applied. Promote a fact to 'verified' only when authoritative documentation or a calibrated test establishes it, and record that in 'evidence'.",
   "profiles": [
     {
-      "id": "ctrl_log_tms_v1",
-      "description": "Flight-controller log with t_ms / phi_deg / theta_deg / ax..gz columns",
-      "documentation_status": "Column names and the time/angle units come from the project owner's description of this format. Accelerometer and gyro units are NOT documented yet; yaw and desired attitude are not part of the described columns.",
-      "signature": ["t_ms", "phi_deg", "theta_deg", "ax", "ay", "az", "gx", "gy", "gz"],
-      "time": {"column": "t_ms", "unit": "ms"},
-      "columns": {
-        "phi_deg": {"canonical": "roll", "unit": "deg"},
-        "theta_deg": {"canonical": "pitch", "unit": "deg"},
-        "ax": {"canonical": "acc_x", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
-        "ay": {"canonical": "acc_y", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
-        "az": {"canonical": "acc_z", "unit": null, "unresolved": "Accelerometer unit is not documented (m/s^2 or g?)."},
-        "gx": {"canonical": "gyro_x", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."},
-        "gy": {"canonical": "gyro_y", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."},
-        "gz": {"canonical": "gyro_z", "unit": null, "unresolved": "Gyro unit is not documented (rad/s or deg/s?)."}
+      "id": "uav_flt_csv",
+      "version": "1.2.0",
+      "description": "33-column single-file flight log (t_ms, status flags, rc_* commands, motors, controller terms, phi_deg/theta_deg, ax..gz)",
+      "documentation_status": "No authoritative data dictionary exists for this layout. Each fact carries an evidence level: 'supported' = cross-checked in the data (numbers in the evidence text, reproducible with scripts/analyze_flt_physics.py and scripts/check_training_convention.py), shown but NOT applied; 'unverified' = no usable evidence. Only facts the owner confirms with scripts/confirm_profile_facts.py are applied. Axis/sign conventions are modelled as owner choices (frame_model.choices): the data cannot select among them.",
+      "required": [
+        "t_ms",
+        "phi_deg",
+        "theta_deg",
+        "ax",
+        "ay",
+        "az",
+        "gx",
+        "gy",
+        "gz",
+        "rc_roll",
+        "rc_pitch",
+        "rc_thr",
+        "rc_yaw"
+      ],
+      "time": {
+        "column": "t_ms",
+        "unit": "ms",
+        "unit_status": "supported",
+        "evidence": "Median step 20 ms (50 Hz), no gaps; regularity is NOT used as evidence. Independent: d(phi)/dt vs gx, with t_ms as ms and angles in deg, gives a gain bounded 0.85-1.14 (FLT_0001) and 0.83-1.61 (FLT_0002) (OLS..reverse over 5-50-sample smoothing). That rules out s/us readings (x1000 off) and rad/s gyros (x57 off); it does not fix the scale better than about +/-40%, and only constrains the product (gyro unit x time unit).",
+        "fact": "time_unit"
       },
-      "ignored": ["armed", "rc_fs", "tof_ok", "rc_roll", "rc_pitch", "rc_thr", "z_est", "z_set", "u1_core", "u1_cmd"],
-      "ignored_patterns": ["^m[0-9]+$", "^u[0-9]+_", "^rc_"]
+      "columns": {
+        "ax": {
+          "canonical": "acc_x",
+          "role": "signal",
+          "unit": "m/s^2",
+          "unit_hypothesis": null,
+          "unit_status": "supported",
+          "frame_status": "unverified",
+          "status": "candidate",
+          "evidence": "|a| median 9.82 (FLT_0001) and 9.80 (FLT_0002) m/s^2, ratio to g 1.002 / 0.999 (a 'g' unit would read ~1.0); all three axes jointly, so one mis-scaled axis would break it. Rest (disarmed, motors idle, 250 samples each; scripts/analyze_flt_physics.py): FLT_0001 phi=-4.56 deg, theta=-1.17 deg, accel=(+0.198, -0.780, +9.791) m/s^2 vs gravity projection (deg) (+0.200, -0.780, +9.774); FLT_0002 is level (phi=-0.02, theta=-0.03), accel=(+0.008, -0.006, +9.795). POLARITY of ax is not independently measured: the only tilt is theta=-1.17 deg and the logged theta is probably computed from ax itself. Training logs (scripts/check_training_convention.py, 9 quiet-start logs): AccZ mean -9.85; AccY tracks -g*sin(Roll) (r 0.98, bias -0.08 +/- 0.05 m/s^2); AccX bias -0.34 +/- 0.18 m/s^2 with pitch only -0.6..2.5 deg, so AccX polarity is NOT measurable there either. CAUTION (circularity): at rest a logger normally computes roll/pitch FROM the accelerometer (phi=atan2(ay,az), theta=atan2(-ax,sqrt(ay^2+az^2)) is the common form, and it reproduces these rest levels exactly), so this agreement shows the angle units and the firmware's formula, not an independent physical check of axis direction or accelerometer bias. Which wing/nose is 'positive' depends on how the sensor is mounted; only a deliberate tilt test or documentation settles it.",
+          "unresolved": "Unit (m/s^2) supported. Sign follows from pitch_sign under the single-IMU assumption; the data does not independently confirm it.",
+          "handling": "Candidate accelerometer axis; not usable until unit and frame are established.",
+          "fact": "accel_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "-pitch_sign"
+        },
+        "ay": {
+          "canonical": "acc_y",
+          "role": "signal",
+          "unit": "m/s^2",
+          "unit_hypothesis": null,
+          "unit_status": "supported",
+          "frame_status": "unverified",
+          "status": "candidate",
+          "evidence": "|a| median 9.82 (FLT_0001) and 9.80 (FLT_0002) m/s^2, ratio to g 1.002 / 0.999 (a 'g' unit would read ~1.0); all three axes jointly, so one mis-scaled axis would break it. Rest (disarmed, motors idle, 250 samples each; scripts/analyze_flt_physics.py): FLT_0001 phi=-4.56 deg, theta=-1.17 deg, accel=(+0.198, -0.780, +9.791) m/s^2 vs gravity projection (deg) (+0.200, -0.780, +9.774); FLT_0002 is level (phi=-0.02, theta=-0.03), accel=(+0.008, -0.006, +9.795). ay follows +g*sin(phi)*cos(theta) in the file's own angles (roll tilt 4.56 deg, observed -0.780 vs predicted -0.779). Training logs (scripts/check_training_convention.py, 9 quiet-start logs): AccZ mean -9.85; AccY tracks -g*sin(Roll) (r 0.98, bias -0.08 +/- 0.05 m/s^2); AccX bias -0.34 +/- 0.18 m/s^2 with pitch only -0.6..2.5 deg, so AccX polarity is NOT measurable there either. CAUTION (circularity): at rest a logger normally computes roll/pitch FROM the accelerometer (phi=atan2(ay,az), theta=atan2(-ax,sqrt(ay^2+az^2)) is the common form, and it reproduces these rest levels exactly), so this agreement shows the angle units and the firmware's formula, not an independent physical check of axis direction or accelerometer bias. Which wing/nose is 'positive' depends on how the sensor is mounted; only a deliberate tilt test or documentation settles it.",
+          "unresolved": "Unit (m/s^2) supported. Sign follows from roll_sign (ay' = -roll_sign*ay); the rest agreement is partly by construction, so the physical roll direction must come from the owner.",
+          "handling": "Candidate accelerometer axis; not usable until unit and frame are established.",
+          "fact": "accel_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "-roll_sign"
+        },
+        "az": {
+          "canonical": "acc_z",
+          "role": "signal",
+          "unit": "m/s^2",
+          "unit_hypothesis": null,
+          "unit_status": "supported",
+          "frame_status": "supported",
+          "status": "candidate",
+          "evidence": "|a| median 9.82 (FLT_0001) and 9.80 (FLT_0002) m/s^2, ratio to g 1.002 / 0.999 (a 'g' unit would read ~1.0); all three axes jointly, so one mis-scaled axis would break it. Rest (disarmed, motors idle, 250 samples each; scripts/analyze_flt_physics.py): FLT_0001 phi=-4.56 deg, theta=-1.17 deg, accel=(+0.198, -0.780, +9.791) m/s^2 vs gravity projection (deg) (+0.200, -0.780, +9.774); FLT_0002 is level (phi=-0.02, theta=-0.03), accel=(+0.008, -0.006, +9.795). az reads about +9.8 at rest in both files; the training convention reads about -9.85, so the model-frame value is -az. Training logs (scripts/check_training_convention.py, 9 quiet-start logs): AccZ mean -9.85; AccY tracks -g*sin(Roll) (r 0.98, bias -0.08 +/- 0.05 m/s^2); AccX bias -0.34 +/- 0.18 m/s^2 with pitch only -0.6..2.5 deg, so AccX polarity is NOT measurable there either. (Sign of az at rest is a direct measurement, not derived from an angle: +9.79 / +9.80 in both files.)",
+          "unresolved": "Unit (m/s^2) supported. az polarity (x -1) is supported by rest data in both files and the training convention; awaiting owner confirmation.",
+          "handling": "Candidate accelerometer axis; not usable until unit and frame are established.",
+          "fact": "accel_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "az_polarity"
+        },
+        "gx": {
+          "canonical": "gyro_x",
+          "role": "signal",
+          "unit": "deg/s",
+          "unit_status": "supported",
+          "frame_status": "unverified",
+          "status": "candidate",
+          "evidence": "d(phi)/dt vs gx: gain bounded 0.85-1.14 (FLT_0001), 0.83-1.61 (FLT_0002); d(theta)/dt vs gy: 0.51-0.92 and 0.5-1.23 (OLS..reverse bounds, 5-50-sample smoothing), always positive. The training logs show the same shape (roll gain 53.6-57.5, pitch 49.8-60.2 deg/s per rad/s): attitude is an estimator output, not the gyro integral, so a gain below 1 for pitch is not by itself a unit error. Cumulative check: pitch change vs integral of gy has slope 0.32 / 0.25 (r 0.77 / 0.44): the pitch estimate is not tracking gy closely. Deg/s vs rad/s is decided (x57); the exact gy scale is NOT established better than about +/-40%.",
+          "unresolved": "Unit family (deg/s) supported; sign follows from roll_sign / pitch_sign (positive against the file's own angles); exact scale of gy not established.",
+          "handling": "Candidate gyroscope axis; not usable until unit and frame are established.",
+          "fact": "gyro_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "roll_sign"
+        },
+        "gy": {
+          "canonical": "gyro_y",
+          "role": "signal",
+          "unit": "deg/s",
+          "unit_status": "supported",
+          "frame_status": "unverified",
+          "status": "candidate",
+          "evidence": "d(phi)/dt vs gx: gain bounded 0.85-1.14 (FLT_0001), 0.83-1.61 (FLT_0002); d(theta)/dt vs gy: 0.51-0.92 and 0.5-1.23 (OLS..reverse bounds, 5-50-sample smoothing), always positive. The training logs show the same shape (roll gain 53.6-57.5, pitch 49.8-60.2 deg/s per rad/s): attitude is an estimator output, not the gyro integral, so a gain below 1 for pitch is not by itself a unit error. Cumulative check: pitch change vs integral of gy has slope 0.32 / 0.25 (r 0.77 / 0.44): the pitch estimate is not tracking gy closely. Deg/s vs rad/s is decided (x57); the exact gy scale is NOT established better than about +/-40%.",
+          "unresolved": "Unit family (deg/s) supported; sign follows from roll_sign / pitch_sign (positive against the file's own angles); exact scale of gy not established.",
+          "handling": "Candidate gyroscope axis; not usable until unit and frame are established.",
+          "fact": "gyro_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "pitch_sign"
+        },
+        "gz": {
+          "canonical": "gyro_z",
+          "role": "signal",
+          "unit": "deg/s",
+          "unit_status": "unverified",
+          "frame_status": "unverified",
+          "status": "candidate",
+          "evidence": "No evidence. gz is assumed to share gx/gy's unit, but the file has no yaw angle to cross-check it against, so neither its unit nor its polarity can be tested.",
+          "unresolved": "Needs documentation: gz unit and polarity cannot be tested from this data.",
+          "handling": "Candidate gyroscope axis; not usable until unit and frame are established.",
+          "fact": "gyro_z_unit",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "gyro_z_sign"
+        },
+        "phi_deg": {
+          "canonical": "roll",
+          "role": "signal",
+          "unit": "deg",
+          "unit_status": "supported",
+          "status": "candidate",
+          "evidence": "Rest (disarmed, motors idle, 250 samples each; scripts/analyze_flt_physics.py): FLT_0001 phi=-4.56 deg, theta=-1.17 deg, accel=(+0.198, -0.780, +9.791) m/s^2 vs gravity projection (deg) (+0.200, -0.780, +9.774); FLT_0002 is level (phi=-0.02, theta=-0.03), accel=(+0.008, -0.006, +9.795). Degrees: g*sin(phi) with phi in radians would give about +7 m/s^2 for FLT_0001's ay; observed -0.78. CAUTION (circularity): at rest a logger normally computes roll/pitch FROM the accelerometer (phi=atan2(ay,az), theta=atan2(-ax,sqrt(ay^2+az^2)) is the common form, and it reproduces these rest levels exactly), so this agreement shows the angle units and the firmware's formula, not an independent physical check of axis direction or accelerometer bias. Which wing/nose is 'positive' depends on how the sensor is mounted; only a deliberate tilt test or documentation settles it.",
+          "unresolved": "Unit (deg) is supported by the rest data. The sign convention (right-wing-down / nose-up positive, as in training) is an owner fact: the data cannot decide it.",
+          "handling": "Candidate measured roll.",
+          "fact": "angle_unit",
+          "frame_status": "unverified",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "roll_sign"
+        },
+        "theta_deg": {
+          "canonical": "pitch",
+          "role": "signal",
+          "unit": "deg",
+          "unit_status": "supported",
+          "status": "candidate",
+          "evidence": "Rest (disarmed, motors idle, 250 samples each; scripts/analyze_flt_physics.py): FLT_0001 phi=-4.56 deg, theta=-1.17 deg, accel=(+0.198, -0.780, +9.791) m/s^2 vs gravity projection (deg) (+0.200, -0.780, +9.774); FLT_0002 is level (phi=-0.02, theta=-0.03), accel=(+0.008, -0.006, +9.795). Degrees: g*sin(phi) with phi in radians would give about +7 m/s^2 for FLT_0001's ay; observed -0.78. CAUTION (circularity): at rest a logger normally computes roll/pitch FROM the accelerometer (phi=atan2(ay,az), theta=atan2(-ax,sqrt(ay^2+az^2)) is the common form, and it reproduces these rest levels exactly), so this agreement shows the angle units and the firmware's formula, not an independent physical check of axis direction or accelerometer bias. Which wing/nose is 'positive' depends on how the sensor is mounted; only a deliberate tilt test or documentation settles it.",
+          "unresolved": "Unit (deg) is supported by the rest data. The sign convention (right-wing-down / nose-up positive, as in training) is an owner fact: the data cannot decide it.",
+          "handling": "Candidate measured pitch.",
+          "fact": "angle_unit",
+          "frame_status": "unverified",
+          "frame_sign": 1,
+          "frame_fact": null,
+          "frame_expr": "pitch_sign"
+        },
+        "armed": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Status/context only (flight-controller armed state, per description)."
+        },
+        "rc_fs": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Do not interpret without confirmation (possibly radio failsafe). Constant 0 in both sample files."
+        },
+        "tof_ok": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Data-quality/context only (time-of-flight validity, per description)."
+        },
+        "tof_st": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Context only; exact meaning needs documentation."
+        },
+        "blk": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Preserved as raw metadata; meaning not inferred."
+        },
+        "aux1": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Auxiliary channel or status; meaning requires documentation."
+        },
+        "kill": {
+          "canonical": null,
+          "role": "status",
+          "status": "unverified",
+          "handling": "Possibly a kill-switch/safety state; meaning and encoding require documentation."
+        },
+        "rc_roll": {
+          "canonical": null,
+          "role": "command",
+          "status": "candidate",
+          "handling": "Pilot/radio roll command. A command input: never measured roll and never a desired-attitude signal.",
+          "never_maps_to": [
+            "roll",
+            "pitch",
+            "yaw",
+            "des_roll",
+            "des_pitch",
+            "des_yaw"
+          ],
+          "unit_status": "unverified"
+        },
+        "rc_pitch": {
+          "canonical": null,
+          "role": "command",
+          "status": "candidate",
+          "handling": "Pilot/radio pitch command. A command input: never measured pitch and never a desired-attitude signal.",
+          "never_maps_to": [
+            "roll",
+            "pitch",
+            "yaw",
+            "des_roll",
+            "des_pitch",
+            "des_yaw"
+          ],
+          "unit_status": "unverified"
+        },
+        "rc_thr": {
+          "canonical": null,
+          "role": "command",
+          "status": "candidate",
+          "handling": "Pilot/radio throttle command. A command input: never measured throttle and never a desired-attitude signal.",
+          "never_maps_to": [
+            "roll",
+            "pitch",
+            "yaw",
+            "des_roll",
+            "des_pitch",
+            "des_yaw"
+          ],
+          "unit_status": "unverified"
+        },
+        "rc_yaw": {
+          "canonical": null,
+          "role": "command",
+          "status": "candidate",
+          "handling": "Pilot/radio yaw command. A command input: never measured yaw and never a desired-attitude signal.",
+          "never_maps_to": [
+            "roll",
+            "pitch",
+            "yaw",
+            "des_roll",
+            "des_pitch",
+            "des_yaw"
+          ],
+          "unit_status": "unverified"
+        },
+        "tof_mm": {
+          "canonical": null,
+          "role": "distance",
+          "status": "unverified",
+          "handling": "Time-of-flight distance, possibly millimetres; unit and sensor semantics need confirmation.",
+          "never_maps_to": [
+            "alt",
+            "alt_amsl"
+          ],
+          "evidence": "tof_h equals tof_mm/1000 (slope 0.001, r 1.000) in both files: tof_mm is consistent with millimetres, as a rangefinder distance."
+        },
+        "m1": {
+          "canonical": null,
+          "role": "motor",
+          "status": "unverified",
+          "handling": "Possibly a motor output/command; encoding and units need confirmation. Context only."
+        },
+        "m2": {
+          "canonical": null,
+          "role": "motor",
+          "status": "unverified",
+          "handling": "Possibly a motor output/command; encoding and units need confirmation. Context only."
+        },
+        "m3": {
+          "canonical": null,
+          "role": "motor",
+          "status": "unverified",
+          "handling": "Possibly a motor output/command; encoding and units need confirmation. Context only."
+        },
+        "m4": {
+          "canonical": null,
+          "role": "motor",
+          "status": "unverified",
+          "handling": "Possibly a motor output/command; encoding and units need confirmation. Context only."
+        },
+        "u1_core": {
+          "canonical": null,
+          "role": "control",
+          "status": "unverified",
+          "handling": "Unknown controller/internal signal; no physical meaning assigned."
+        },
+        "u1_cmd": {
+          "canonical": null,
+          "role": "control",
+          "status": "unverified",
+          "handling": "Possibly a controller command; semantics need confirmation."
+        },
+        "u2": {
+          "canonical": null,
+          "role": "control",
+          "status": "unverified",
+          "handling": "Unknown controller/internal signal; no physical meaning assigned."
+        },
+        "u3": {
+          "canonical": null,
+          "role": "control",
+          "status": "unverified",
+          "handling": "Unknown controller/internal signal; no physical meaning assigned."
+        },
+        "u4": {
+          "canonical": null,
+          "role": "control",
+          "status": "unverified",
+          "handling": "Unknown controller/internal signal; no physical meaning assigned."
+        },
+        "z_est": {
+          "canonical": null,
+          "role": "vertical",
+          "status": "unverified",
+          "handling": "Possibly an estimated vertical-axis variable; meaning and units need documentation. Not barometric altitude.",
+          "never_maps_to": [
+            "alt",
+            "alt_amsl"
+          ],
+          "evidence": "Tracks tof_h (slope 0.994 and 1.0005, r >= 0.995): behaves like a rangefinder-derived height in metres; not barometric altitude."
+        },
+        "z_set": {
+          "canonical": null,
+          "role": "vertical",
+          "status": "unverified",
+          "handling": "Possibly a vertical-axis target/setpoint; meaning and units need documentation. Not barometric altitude.",
+          "never_maps_to": [
+            "alt",
+            "alt_amsl"
+          ],
+          "evidence": "z_est follows z_set loosely (slope 0.62 / 0.79, r 0.83 / 0.89): consistent with a vertical setpoint; semantics undocumented."
+        },
+        "tof_h": {
+          "canonical": null,
+          "role": "distance",
+          "status": "unverified",
+          "handling": "Possibly a height/distance-related signal; meaning and units need documentation. Not barometric altitude and not necessarily equal to z_est or z_set.",
+          "never_maps_to": [
+            "alt",
+            "alt_amsl"
+          ],
+          "evidence": "Equals tof_mm/1000 (r 1.000). z_est tracks tof_h (slope 0.99-1.00, r >= 0.995). A rangefinder-derived height above ground, not barometric altitude."
+        }
+      },
+      "detector_compatibility": {
+        "needs": [
+          "gyro_x",
+          "gyro_y",
+          "gyro_z",
+          "acc_x",
+          "acc_y",
+          "acc_z",
+          "roll",
+          "pitch",
+          "yaw",
+          "des_roll",
+          "des_pitch"
+        ],
+        "missing_notes": {
+          "yaw": "The file has no measured yaw angle and none is derivable: rc_yaw is a pilot command, and integrating gz is rejected (gz's unit and polarity cannot be tested, integration drifts, and it would change the preprocessing the model was trained under).",
+          "des_roll": "The file has no desired (setpoint) roll. rc_roll is a pilot stick command (integers, about -4 to -2 in these files) and is not a desired attitude.",
+          "des_pitch": "The file has no desired (setpoint) pitch. rc_pitch is a pilot stick command and is not a desired attitude.",
+          "alt": "No barometric altitude. tof_h/z_est are rangefinder-derived heights above ground (tof_h = tof_mm/1000, r = 1.000), a different quantity, so they are not mapped to 'alt'.",
+          "press": "No barometric pressure column in this layout.",
+          "temp": "No temperature column in this layout."
+        },
+        "baro_required": false
+      },
+      "frame_model": {
+        "description": "Training convention T (ArduPilot FRD, measured in the training logs): AccZ ~ -9.85 at rest, AccY = -g sin(Roll)cos(Pitch), AccX = +g sin(Pitch), roll/pitch rate = +GyrX/+GyrY in rad/s. The file shows az=+g at rest, ay = +g sin(phi_f), d(phi_f)/dt = +gx, d(theta_f)/dt = +gy. If the file's roll/pitch have signs roll_sign / pitch_sign relative to T, those relations force: roll' = roll_sign*phi, pitch' = pitch_sign*theta, ay' = -roll_sign*ay, ax' = -pitch_sign*ax, az' = -az, gx' = roll_sign*gx, gy' = pitch_sign*gy. All four (roll_sign, pitch_sign) combinations reproduce the rest data, so the data cannot choose them; the older 'negate all accelerometer axes' rule is only the (+1,+1) member. Assumes one IMU with a uniform output polarity whose axes are a signed permutation of FRD.",
+        "choices": {
+          "roll_sign": {
+            "values": [
+              1,
+              -1
+            ],
+            "meaning": "+1: phi_deg is positive with the right wing down (as the training Roll). -1: opposite.",
+            "how_to_check": "Power the aircraft level, lower the RIGHT wing ~20 deg and hold; if phi_deg goes positive the answer is +1.",
+            "settled_by": "tilt_test"
+          },
+          "pitch_sign": {
+            "values": [
+              1,
+              -1
+            ],
+            "meaning": "+1: theta_deg is positive nose-up (as the training Pitch). -1: nose-down positive (e.g. right-handed about a left-pointing y axis, ROS style).",
+            "how_to_check": "Power the aircraft level, raise the NOSE ~20 deg and hold; if theta_deg goes positive the answer is +1.",
+            "settled_by": "tilt_test"
+          },
+          "az_polarity": {
+            "values": [
+              -1
+            ],
+            "meaning": "az reads +g when level and upright, so the model-frame value is -az.",
+            "how_to_check": "Rest data: az=+9.79 / +9.80 in both files.",
+            "settled_by": "data"
+          },
+          "gyro_z_sign": {
+            "values": [
+              1,
+              -1
+            ],
+            "meaning": "Multiplier that maps gz to the training yaw rate (clockwise-from-above positive). Not testable from this data.",
+            "how_to_check": "Needs the logger's documentation, or a deliberate yaw rotation with a reference.",
+            "settled_by": "documentation"
+          }
+        },
+        "circularity_note": "CAUTION (circularity): at rest a logger normally computes roll/pitch FROM the accelerometer (phi=atan2(ay,az), theta=atan2(-ax,sqrt(ay^2+az^2)) is the common form, and it reproduces these rest levels exactly), so this agreement shows the angle units and the firmware's formula, not an independent physical check of axis direction or accelerometer bias. Which wing/nose is 'positive' depends on how the sensor is mounted; only a deliberate tilt test or documentation settles it."
+      }
     }
   ]
 }
