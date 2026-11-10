@@ -52,3 +52,4 @@ frontend/.env.local
 # Uncomment if you do not want to commit weights:
 # uav_model/*.pth
 # uav_model/*.pkl
+data/direct/
