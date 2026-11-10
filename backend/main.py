@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 load_dotenv(ROOT / ".env")
 
-from backend.routers import flights, health  # noqa: E402
+from backend.routers import direct, flights, health  # noqa: E402
 
 class QuietLocalModelProbes(logging.Filter):
     """Hide OpenCode's vLLM discovery polls against this API.
@@ -70,6 +70,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(flights.router)
+app.include_router(direct.router)
 
 
 @app.exception_handler(Exception)
