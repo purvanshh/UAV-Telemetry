@@ -75,6 +75,43 @@ export type UploadResponse = {
   duplicate_kind?: string | null;
 };
 
+export type UploadSummaryStream = {
+  stream: string;
+  role: string;
+  ok: boolean;
+  filename: string | null;
+  file_size_bytes: number | null;
+  rows: number;
+  columns: number;
+  errors: string[];
+  warnings: string[];
+  timestamp: {
+    column: string;
+    unit: string | null;
+    unit_source: string | null;
+    est_hz: number | null;
+    duration_s: number | null;
+    duplicate_timestamps: number;
+    non_monotonic_timestamps: number;
+    missing_timestamps: number;
+  } | null;
+  missing_required: string[];
+  range_flags: string[];
+};
+
+export type UploadSummary = {
+  flight_id: string;
+  source: string;
+  filenames: Record<string, string>;
+  file_sizes: Record<string, number>;
+  upload_warnings: string[];
+  streams: UploadSummaryStream[];
+  all_errors: string[];
+  ready_for_analysis: boolean;
+  hints: string[];
+  analysis_note: string;
+};
+
 export type AnalyzeResponse = {
   ok: boolean;
   flight_id: string;
@@ -203,6 +240,8 @@ export type Timeline = { time_reference: string; total_s: number | null; items: 
 export type ChannelEvidence = {
   signal: string;
   label: string;
+  pilot_label?: string;
+  technical_name?: string;
   unit: string | null;
   during: { min: number | null; max: number | null; mean: number | null; n: number } | null;
   before: { p05: number | null; median: number | null; p95: number | null; span_s: number } | null;
@@ -225,6 +264,8 @@ export type EventDetail = {
   uncertain: string[];
   suggested_action: string;
   nearby_unassessed: { start_s: number; end_s: number; reason: string }[];
+  flagged_window_count?: number;
+  affected_signals?: string[];
 };
 
 export type EventContext = {
@@ -234,13 +275,72 @@ export type EventContext = {
   window_start_rel_s: number;
   window_end_rel_s: number;
   time: number[];
-  channels: { signal: string; label: string; unit: string | null; values: (number | null)[] }[];
+  channels: { signal: string; label: string; technical_name?: string; unit: string | null; values: (number | null)[] }[];
   segment_limited: boolean;
+};
+
+/** Review categories. These order attention; they are not safety or severity ratings. */
+export type PilotReviewLabel = "Review recommended" | "Worth checking" | "No notable change detected";
+
+export type PilotWhen = {
+  display: string;
+  approximate: string;
+  start_row: number | null;
+  end_row: number | null;
+  start_raw?: number | null;
+  end_raw?: number | null;
+  start_rel_s?: number | null;
+  end_rel_s?: number | null;
+};
+
+export type PilotAttention = {
+  event_id: string | null;
+  review_label: PilotReviewLabel;
+  priority: string;
+  title: string;
+  when: PilotWhen;
+  what_happened: string;
+};
+
+export type PilotEvent = {
+  event_id: string;
+  priority: string;
+  review_label: PilotReviewLabel;
+  category: string;
+  title: string;
+  what_happened: string;
+  when: PilotWhen;
+  why_review: string;
+  what_to_check: string[];
+  source_rows: { start: number | null; end: number | null };
+  technical_why: string;
+};
+
+export type PilotReport = {
+  mode: "ai_analysis" | "deep_analysis";
+  mode_label: string;
+  mode_note: string;
+  detection_note: string;
+  summary: string;
+  attention: PilotAttention[];
+  key_observations: string[];
+  next_steps: { event_id: string; text: string }[];
+  limitation: string;
+  other_intervals: { event_id: string | null; review_label: PilotReviewLabel; title: string; when: string }[];
+  what_system_cannot_determine: string[];
+  coverage?: {
+    analysed_s: number | null;
+    flight_s: number | null;
+    status: string | null;
+    analysed_fraction: number | null;
+  };
 };
 
 export type OperatorReport = {
   overview: Overview;
   events: EventDetail[];
+  pilot_report?: PilotReport;
+  pilot_events?: Record<string, PilotEvent>;
   unassessed: Unassessed[];
   methodology: string;
   model_version: Record<string, unknown>;
@@ -270,6 +370,12 @@ export type MappedColumn = {
   role: "time" | "signal" | "unmapped" | "ignored";
   unresolved?: string | null;
   semantics?: string | null;
+  profile_role?: string | null;
+  semantic_status?: string | null;
+  unit_hypothesis?: string | null;
+  evidence?: string | null;
+  evidence_level?: "verified" | "supported" | "unverified" | null;
+  handling?: string | null;
   canonical: string | null;
   group: string | null;
   unit: string | null;
@@ -293,7 +399,7 @@ export type Assessment = {
   detector_inputs: {
     key: string;
     label: string;
-    role: "scored" | "pipeline";
+    role: "scored" | "pipeline" | "optional";
     status: "ok" | "missing" | "unit_unresolved" | "ambiguous";
     sources: Record<string, string>;
   }[];
@@ -311,6 +417,16 @@ export type Assessment = {
   counts: Record<string, number>;
   profile: { id: string; documentation_status: string } | null;
   pipeline_note?: string | null;
+  next_steps?: { kind: "confirm" | "tilt_test" | "document" | "log_signals"; text: string; facts: Record<string, string[]> }[];
+  format_summary?: { label: string; status: "ok" | "pending" | "missing" | "fail" | "info"; text: string }[] | null;
+  profile_match?: {
+    kind: "exact" | "compatible" | "partial" | "none";
+    profile: string | null;
+    file_fingerprint: string;
+    missing_required: string[];
+    missing_optional: string[];
+    extra_columns: string[];
+  } | null;
 };
 
 export type AutoResult = CombinedPreview & {
@@ -357,6 +473,211 @@ export type CombinedPreview = {
   }[];
   llm?: { status: string; message: string; disclosure: string; columns_sent: number; model?: string | null };
   scoreable_note?: string;
+};
+
+export type DirectWindow = { available: boolean; n: number; median: number | null; min: number | null; max: number | null; sigma?: number | null; jitter?: number | null };
+
+export type DirectMeasurement = {
+  channel: string;
+  group: string | null;
+  role: string | null;
+  semantics: string;
+  kinds: string[];
+  before: DirectWindow;
+  during: DirectWindow;
+  after: DirectWindow;
+  before_median: number | null;
+  during_min: number | null;
+  during_max: number | null;
+  during_median: number | null;
+  after_median: number | null;
+  max_step: number | null;
+  swing: number | null;
+  shift: number | null;
+  shift_sigma: number | null;
+  direction: "higher" | "lower" | "unchanged" | null;
+  persistence: string | null;
+  level_held_until_row: number | null;
+  onset_row: number;
+  onset_raw: number | null;
+};
+
+export type DirectAssociation = {
+  type: "simultaneous" | "sequential" | "group" | "correlation";
+  basis: string;
+  physical_relationship: string;
+  channels?: string[];
+  a?: string;
+  b?: string;
+  r?: number;
+};
+
+export type DirectCategory = "data_quality" | "state_transition" | "statistical_irregularity";
+
+export type DirectEvent = {
+  id: string;
+  category: DirectCategory;
+  priority: "review_first" | "review" | "minor";
+  kinds: string[];
+  channels: string[];
+  n_channels_involved: number;
+  start_index: number;
+  end_index: number;
+  n_samples: number;
+  start_row: number;
+  end_row: number;
+  start_raw: number | null;
+  end_raw: number | null;
+  span_raw: number | null;
+  span_s_assumed: { value: number; basis: string } | null;
+  why_selected: string;
+  measurements: DirectMeasurement[];
+  associations: DirectAssociation[];
+  concurrent_with: { event_id: string; category: DirectCategory; relation: string }[];
+};
+
+export type DirectOperatorEvent = {
+  title: string;
+  when: string;
+  what_changed: string[];
+  same_time: { kind: string; text: string }[];
+  can_conclude: string[];
+  unknown: string[];
+  review_next: string[];
+  why_selected: string;
+};
+
+export type DirectOperatorReport = {
+  headline: string;
+  flight_summary: string[];
+  events: Record<string, DirectOperatorEvent>;
+  recommended_review: { event_id: string; action: string; why: string }[];
+  data_quality_material: { issue: string; detail: string }[];
+  essential_limitations: string[];
+  not_established: string;
+  pilot_report?: PilotReport;
+  pilot_events?: Record<string, PilotEvent>;
+};
+
+export type DirectSummary = {
+  filename: string;
+  input_fingerprint: string;
+  analysis_version?: string;
+  operator?: DirectOperatorReport;
+  engine?: Record<string, number>;
+  profile: { id: string | null; version: string | null; match: string; documentation_status: string | null };
+  timing: {
+    time_column: string | null;
+    time_basis: { column: string | null; unit_hypothesis: string | null; status: string; source: string; evidence: string };
+    median_step_raw?: number | null;
+    span_raw?: number | null;
+    first_raw?: number | null;
+    last_raw?: number | null;
+    duration_s?: { value: number; basis: string };
+    sampling_hz?: { value: number; basis: string };
+    n_gaps?: number;
+    repeated_timestamps?: number;
+    out_of_order_steps?: number;
+    rows_without_valid_timestamp?: number;
+    note?: string;
+  };
+  channels: Record<string, { name: string; group: string; role: string | null; unit: string | null; unit_hypothesis: string | null; unit_status: string; meaning_status: string }>;
+  stats: Record<string, Record<string, number | boolean | string | null>>;
+  events: DirectEvent[];
+  event_overflow: number;
+  peaks: { id: string; channel: string; row: number; raw_time: number | null; value: number; channel_median: number; departure: number }[];
+  phases: { flag: string; value: number; start_row: number; end_row: number; start_raw: number | null; end_raw: number | null; n: number }[];
+  flag_transitions: { channel: string; from: number; to: number; index: number }[];
+  correlations: { pairs: { a: string; b: string; r: number }[]; rate_pairs: { a: string; b: string; r: number }[]; note: string };
+  data_quality: {
+    rows: number;
+    rows_analysed: number;
+    columns: number;
+    numeric_columns: number;
+    non_numeric_columns: string[];
+    constant_channels: string[];
+    channels_with_missing: Record<string, { missing: number; non_finite: number }>;
+    notes: string[];
+  };
+  unassessed_periods: { kinds: string[]; channels: string[]; start_row: number; end_row: number; start_raw: number | null; end_raw: number | null }[];
+  limitations: string[];
+  not_implemented: string[];
+};
+
+export type EvidenceRef = { id: string; value: number | string };
+
+export type DirectReport = {
+  label: string;
+  mode: string;
+  status: "ok" | "partial" | "not_requested" | "unavailable" | "error" | "invalid_output";
+  message: string;
+  executive_summary: string;
+  summary_source?: "ai" | "deterministic";
+  events: {
+    event_id: string;
+    category: DirectCategory;
+    title: string;
+    summary: string;
+    same_time: string;
+    conclusion: string;
+    unknown: string;
+    review: string;
+    supporting_channels: string[];
+    measurements: EvidenceRef[];
+    source: { start_row: number; end_row: number; start_raw: number | null; end_raw: number | null };
+  }[];
+  data_quality: { issue: string; detail: string }[];
+  recommendations: { action: string; rationale: string }[];
+  unknowns: string[];
+  limitations: string[];
+  rejected: { section: string; reason: string; text: string }[];
+  normalized?: Record<string, string>[];
+  failure: { reason: string; detail?: string; fields?: string[]; attempts?: number; kind?: string; finish_reason?: string | null } | null;
+  provenance: Record<string, unknown>;
+  reused?: boolean;
+  reused_from?: string;
+};
+
+export type DirectView = {
+  analysis_id: string;
+  label: string;
+  stage?: string;
+  stale_analysis?: boolean;
+  meta: { filename: string; created_at: string; rows: number; columns: number; events: number; ai_attempt?: { status: string; message?: string; reason?: string | null; fields?: string[]; attempts?: number | null } | null };
+  summary: DirectSummary;
+  report: DirectReport | null;
+  consent_text: string;
+  separation_note: string;
+};
+
+export type DirectEventContext = {
+  event_id: string;
+  axis: string;
+  x_is: "raw_ticks" | "row";
+  regions: {
+    baseline: { start: number; end: number; available: boolean };
+    event: { start: number; end: number };
+    post: { start: number; end: number; available: boolean };
+  };
+  channels: {
+    signal: string;
+    label: string;
+    technical_name?: string;
+    group: string | null;
+    semantics: string | null;
+    time: number[];
+    values: (number | null)[];
+    before: DirectWindow;
+    during: DirectWindow;
+    after: DirectWindow;
+    kinds: string[];
+    persistence: string | null;
+    shift_sigma: number | null;
+  }[];
+  window_start: number;
+  window_end: number;
+  segment_limited: boolean;
+  baseline_samples: number;
 };
 
 export type Assignments = Record<string, { canonical: string; unit: string }>;
@@ -502,6 +823,8 @@ export const api = {
     return res.json();
   },
   overview: (id: string) => getJson<Overview>(`/api/flights/${encodeURIComponent(id)}/overview`),
+  uploadSummary: (id: string) =>
+    getJson<UploadSummary>(`/api/flights/${encodeURIComponent(id)}/upload-summary`),
   timeline: (id: string) => getJson<Timeline>(`/api/flights/${encodeURIComponent(id)}/timeline`),
   eventDetail: (id: string, eventId: string) =>
     getJson<EventDetail>(
@@ -536,6 +859,27 @@ export const api = {
     if (!res.ok) await parseError(res);
     return res.json() as Promise<CombinedPreview>;
   },
+  directAnalyze: async (file: File, consent: boolean) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("llm_consent", String(consent));
+    const res = await fetch(`${API_URL}/api/direct/analyze`, { method: "POST", body: fd });
+    if (!res.ok) await parseError(res);
+    return res.json() as Promise<DirectView>;
+  },
+  directGet: (id: string) => getJson<DirectView>(`/api/direct/${encodeURIComponent(id)}`),
+  directList: () =>
+    getJson<{ analysis_id: string; filename: string; created_at: string; rows: number; events: number; has_ai_report: boolean }[]>("/api/direct"),
+  directAi: (id: string) =>
+    sendJson<DirectView>(`/api/direct/${encodeURIComponent(id)}/ai`, "POST", { consent: true }),
+  directContext: (id: string, eventId: string) =>
+    getJson<DirectEventContext>(`/api/direct/${encodeURIComponent(id)}/events/${encodeURIComponent(eventId)}/context`),
+  directRows: (id: string, limit = 200) =>
+    getJson<{ columns: string[]; rows: Record<string, number | null>[]; total_rows: number; returned: number }>(
+      `/api/direct/${encodeURIComponent(id)}/rows?limit=${limit}`
+    ),
+  directDelete: (id: string) => sendJson<{ status: string }>(`/api/direct/${encodeURIComponent(id)}`, "DELETE"),
+  directExportUrl: (id: string) => `${API_URL}/api/direct/${encodeURIComponent(id)}/export`,
   combinedAuto: async (file: File, assignments: Assignments, llmConsent: boolean, flightId?: string) => {
     const fd = new FormData();
     fd.append("file", file);
