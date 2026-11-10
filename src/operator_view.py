@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 
 from src.report_schema import FlightReport
+from src.pilot_report import build_deep_pilot_report, deep_event_cards, friendly_signal_label
 
 # ---- verdict -----------------------------------------------------------------------
 
@@ -330,7 +331,8 @@ def _channel_evidence(
     aligned: Optional[pd.DataFrame], signal: str, start: float, end: float, session_id: int, rel0: float
 ) -> Dict[str, Any]:
     info = SIGNAL_INFO.get(signal, {"label": signal, "unit": None})
-    item: Dict[str, Any] = {"signal": signal, "label": info["label"], "unit": info["unit"], "during": None, "before": None}
+    item: Dict[str, Any] = {"signal": signal, "label": info["label"], "pilot_label": friendly_signal_label(signal, deep=True),
+                            "technical_name": signal, "unit": info["unit"], "during": None, "before": None}
     if aligned is None or signal not in aligned.columns:
         return item
     ev_m, base_m = _channel_context(aligned, start, end, session_id)
@@ -427,6 +429,8 @@ def describe_event(
         "start_label": fmt_clock(s_rel),
         "end_label": fmt_clock(e_rel),
         "duration_s": ev.duration_s,
+        "flagged_window_count": ev.flagged_window_count,
+        "affected_signals": list(ev.affected_signals),
         "what_observed": observed,
         "when": f"{fmt_clock(s_rel)} to {fmt_clock(e_rel)} into the recording ({ev.duration_s:.1f} s), flight segment {ev.session_id + 1}.",
         "channels": chans,
@@ -479,7 +483,8 @@ def event_context(
             continue
         info = SIGNAL_INFO.get(sig, {"label": sig, "unit": None})
         vals = [_safe(v) for v in sub[sig]]
-        out["channels"].append({"signal": sig, "label": info["label"], "unit": info["unit"], "values": vals})
+        out["channels"].append({"signal": sig, "label": friendly_signal_label(sig, deep=True),
+                                "technical_name": sig, "unit": info["unit"], "values": vals})
     return out
 
 
@@ -516,7 +521,8 @@ def _input_summary(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     cols = [
         {"source": x["source_column"], "canonical": x.get("canonical"), "unit": x.get("unit"),
          "expected_unit": x.get("expected_unit"), "unit_status": x.get("unit_status"), "method": x.get("method"),
-         "status": x.get("validation_status"), "converted": bool(x.get("conversion")), "ignored": bool(x.get("ignored"))}
+         "status": x.get("validation_status"), "converted": bool(x.get("conversion")), "ignored": bool(x.get("ignored")),
+         "profile_role": x.get("profile_role"), "semantic_status": x.get("semantic_status")}
         for x in (c.get("mapping") or {}).get("columns", [])
     ]
     t = (c.get("mapping") or {}).get("time")
@@ -656,11 +662,22 @@ def build_operator_report(
         "note": "Technical detail for engineers. Not needed to understand the findings above.",
         "detector": report.detector.model_dump(),
         "scores": report.summary.model_dump(),
+        "signal_reference": [
+            {
+                "feature": s,
+                "pilot_label": friendly_signal_label(s, deep=True),
+                "technical_label": (SIGNAL_INFO.get(s) or {}).get("label", s),
+                "unit": (SIGNAL_INFO.get(s) or {}).get("unit"),
+            }
+            for s in report.detector.features
+        ],
         "events": [
             {
                 "event_id": e.event_id, "peak_score": e.peak_score, "mean_flagged_score": e.mean_flagged_score,
                 "threshold": e.threshold, "peak_over_threshold": e.peak_over_threshold,
                 "window_indices": e.window_indices,
+                "affected_signals": list(e.affected_signals),
+                "flagged_window_count": e.flagged_window_count,
                 "per_feature_evidence": [x for x in e.evidence if x.get("type") == "per_feature_recon_error"],
             }
             for e in report.events
@@ -671,9 +688,19 @@ def build_operator_report(
         "not_implemented_checks": NOT_IMPLEMENTED_CHECKS,
         "report_schema_version": report.schema_version,
     }
+    pilot = build_deep_pilot_report(
+        report=report,
+        details=ev_details,
+        coverage=ov["coverage"],
+        verdict=ov["verdict"],
+        analysed_s=ov["duration"].get("analysed_s"),
+        flight_s=ov["duration"].get("flight_s"),
+    )
     return {
         "overview": ov,
         "events": ev_details,
+        "pilot_report": pilot,
+        "pilot_events": deep_event_cards(ev_details),
         "unassessed": ov["unassessed"],
         "methodology": (
             "Telemetry from the IMU, attitude and barometer logs is aligned to a common 10 Hz timeline, "
