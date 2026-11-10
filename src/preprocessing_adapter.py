@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from src.artifact_loader import resolve_model_dir
@@ -61,11 +62,29 @@ def _normalize_stream(df: pd.DataFrame, stream: str, max_gap_s: float):
     return clean, report
 
 
+def baro_timestamp_scaffold(imu: pd.DataFrame) -> pd.DataFrame:
+    """A BARO frame that carries IMU timestamps and NO readings (all values NaN).
+
+    The deployed preprocessing uses every stream's timestamps to bound the alignment grid and to
+    detect source gaps, but none of the 12 scored features reads barometer values
+    (``tests/test_optional_baro.py`` pins that bit-for-bit). A scaffold built from the IMU
+    timestamps therefore adds no extra bounds or gaps. It is only used when a dataset profile
+    declares the barometer optional; three-file uploads still require real BARO data.
+    """
+    ts_col = next((c for c in imu.columns if str(c).lower() in ("timeus", "timestamp")), None)
+    if ts_col is None:
+        raise PreprocessingError("Cannot build a barometer scaffold: the IMU stream has no timestamp column.")
+    return pd.DataFrame({"TimeUS": imu[ts_col].to_numpy(), "Alt": np.nan, "Press": np.nan, "Temp": np.nan})
+
+
 def align_uploaded_flight_detailed(
     frames: Dict[str, pd.DataFrame],
     model_dir: Optional[Path | str] = None,
     align_cfg: Optional[Dict[str, Any]] = None,
+    allow_missing_baro: bool = False,
 ) -> AlignmentDetail:
+    if allow_missing_baro and ("BARO" not in frames or frames["BARO"] is None) and frames.get("IMU") is not None:
+        frames = {**frames, "BARO": baro_timestamp_scaffold(frames["IMU"])}
     for stream in ("IMU", "ATT", "BARO"):
         if stream not in frames or frames[stream] is None:
             raise PreprocessingError(f"Missing {stream} frame for alignment.")

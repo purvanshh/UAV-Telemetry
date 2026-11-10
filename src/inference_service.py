@@ -20,6 +20,7 @@ from src.data_quality import build_data_quality, minimal_data_quality
 from src.preprocessing_adapter import (
     PreprocessingError,
     align_uploaded_flight_detailed,
+    baro_timestamp_scaffold,
     data_quality_warnings,
 )
 from src.provenance import build_provenance
@@ -153,6 +154,14 @@ def analyze_flight(
     warnings.extend(artifacts.warnings)
     schema_ver = artifacts.feature_schema.get("version")
 
+    baro_absent = bool(flight_meta.get("baro_absent")) and "BARO" not in frames
+    if baro_absent:
+        # Declared optional by the dataset profile at upload. Timestamps only; no readings exist or are invented.
+        frames = {**frames, "BARO": baro_timestamp_scaffold(frames["IMU"])}
+        warnings.append(
+            "No barometer data in this file. Barometer context is unavailable; it is not a model input and "
+            "does not affect any score."
+        )
     try:
         detail = align_uploaded_flight_detailed(frames, model_dir=model_dir)
         aligned = detail.aligned
@@ -193,6 +202,8 @@ def analyze_flight(
         flight_meta=flight_meta,
         timebase=detail.timebase,
     )
+    if baro_absent:
+        provenance = {**provenance, "barometer": {"provided": False, "scaffold": "IMU timestamps, no readings"}}
     schema = detail.prep.DEFAULT_SCHEMA
     used_cols = {
         "IMU": list(schema["IMU"]["features"].values()),
@@ -201,6 +212,21 @@ def analyze_flight(
     }
 
     def _dq(n_scored: Optional[int]) -> Dict[str, Any]:
+        out = _dq_inner(n_scored)
+        if baro_absent:
+            out["barometer_provided"] = False
+            # The accounting above saw the timestamps-only scaffold; do not present it as barometer rows.
+            b = out.get("streams", {}).get("BARO")
+            if isinstance(b, dict):
+                out["streams"]["BARO"] = {
+                    "provided": False,
+                    "note": "No barometer in this file. A timestamps-only placeholder (copied from the IMU, "
+                            "no readings) keeps the alignment grid identical; its rows are not barometer data.",
+                    "rows_input": 0, "rows_after_cleaning": 0, "warnings": [],
+                }
+        return out
+
+    def _dq_inner(n_scored: Optional[int]) -> Dict[str, Any]:
         return build_data_quality(
             frames=frames,
             detail=detail,

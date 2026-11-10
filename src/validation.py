@@ -268,8 +268,9 @@ def validate_flight(
     *,
     filenames: Optional[Dict[str, str]] = None,
     file_sizes: Optional[Dict[str, int]] = None,
+    required_streams: tuple = STREAMS,
 ) -> FlightValidationResult:
-    """Validate that all three streams are present and individually valid.
+    """Validate that the required streams (default: all three) are present and individually valid.
 
     Different row counts / sampling rates across streams are allowed.
     """
@@ -277,12 +278,12 @@ def validate_flight(
     file_sizes = file_sizes or {}
     flight = FlightValidationResult(ok=True)
 
-    missing = [s for s in STREAMS if s not in frames or frames[s] is None]
+    missing = [s for s in required_streams if s not in frames or frames[s] is None]
     if missing:
         flight.ok = False
         flight.errors.append(
             f"Missing required stream(s): {', '.join(missing)}. "
-            f"Upload IMU, ATT and BARO CSVs (or a ZIP containing all three)."
+            f"Upload {', '.join(required_streams)} data (IMU, ATT and BARO CSVs, or a ZIP containing all three)."
         )
 
     for stream in STREAMS:

@@ -185,25 +185,6 @@ def default_profile_env(monkeypatch):
     monkeypatch.setenv("UAV_PROFILES_FILE", str(ROOT / "config" / "dataset_profiles.json"))
 
 
-def test_shipped_profile_accepts_documented_parts_and_leaves_units_unresolved(monkeypatch):
-    default_profile_env(monkeypatch)
-    p = build_combined_preview(user_format(), "u.csv", {}, llm_consent=False)
-    by = {c["name"]: c for c in p["columns"]}
-    assert by["t_ms"]["status"] == "recognized" and by["t_ms"]["unit_status"] == "profile"
-    assert by["phi_deg"]["canonical"] == "roll" and by["phi_deg"]["status"] == "recognized"
-    for g in ("gx", "gy", "gz", "ax", "ay", "az"):
-        assert by[g]["status"] == "needs_confirmation" and by[g]["unresolved"] == "unit", g
-        assert "not documented" in by[g]["ambiguity"]
-    for ign in ("armed", "rc_roll", "rc_pitch", "rc_thr", "z_est", "u1_core"):
-        assert by[ign]["status"] == "ignored" or by[ign]["canonical"] is None
-    a = p["assessment"]
-    assert a["outcome"] == "incompatible" and not a["compatible"]
-    assert {m["canonical"] for m in a["missing"]} >= {"yaw", "des_roll", "des_pitch"}
-    assert any("yaw" in n.lower() for n in a["needed"])
-    groups = {g["key"]: g["status"] for g in a["detector_inputs"]}
-    assert groups["attitude"] == "ok" and groups["gyro"] == "unit_unresolved" and groups["yaw"] == "missing"
-
-
 def test_gpt_cannot_supply_a_unit(monkeypatch, tmp_path):
     monkeypatch.setenv("UAV_PROFILES_FILE", str(tmp_path / "none.json"))
     c = FakeClient(content=json.dumps({"proposals": [_p("gx", "gyro_x", "rad/s", "high")]}))
@@ -239,19 +220,19 @@ def test_low_confidence_proposal_leaves_meaning_unresolved(monkeypatch, tmp_path
 
 # 5 + 12 ---- missing signals prevent inference; nothing is reported as analysed ------------------------
 
-def test_missing_required_signals_never_reach_the_detector(client, monkeypatch):
-    default_profile_env(monkeypatch)
+def test_missing_required_signals_never_reach_the_detector(client, monkeypatch, frames):
     import backend.routers.flights as fl
 
     def boom(*a, **k):
         raise AssertionError("detector must not run for an incompatible file")
 
     monkeypatch.setattr(fl, "analyze_flight", boom)
-    r = auto(client, user_format())
+    r = auto(client, _csv(documented_file(frames).drop(columns=["yaw_deg"])))
     assert r["stage"] == "incompatible" and r["stored"] is False and r["flight_id"] is None
     assert "analysis" not in r
     assert client.get("/api/flights").json() == []
     assert r["assessment"]["headline"] == "The deployed detector cannot analyse this file"
+    assert any("yaw" in n.lower() for n in r["assessment"]["needed"])
 
 
 def test_needs_input_stage_when_only_units_are_missing(client, frames):

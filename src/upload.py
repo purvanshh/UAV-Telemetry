@@ -30,7 +30,9 @@ class UploadResult:
     file_sizes: Dict[str, int] = field(default_factory=dict)
     file_sha256: Dict[str, str] = field(default_factory=dict)
     validation: Optional[FlightValidationResult] = None
-    source: str = ""  # "individual" | "zip"
+    source: str = ""  # "individual" | "zip" | "combined"
+    context: Optional[pd.DataFrame] = None  # raw non-model columns kept for reporting (combined only)
+    baro_absent: bool = False  # combined file whose profile makes the barometer optional and none was given
 
     @property
     def all_errors(self) -> List[str]:
