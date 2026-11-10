@@ -17,6 +17,8 @@ type Dq = {
   streams?: Record<
     string,
     {
+      provided?: boolean;
+      note?: string;
       rows_input?: number;
       rows_after_cleaning?: number;
       rows_duplicate_timestamp?: number;
@@ -71,7 +73,12 @@ export function DataCoverage({ dq }: { dq?: Record<string, unknown> | null }) {
               <tr><th>Stream</th><th>Rows</th><th>Kept</th><th>Dup. time</th><th>Bad time</th><th>Gaps</th><th>Gap time</th><th>Time unit</th></tr>
             </thead>
             <tbody>
-              {Object.entries(d.streams).map(([name, s]) => (
+              {Object.entries(d.streams).map(([name, s]) => s.provided === false ? (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td colSpan={7} className="muted">Not provided in this file. {s.note}</td>
+                </tr>
+              ) : (
                 <tr key={name}>
                   <td>{name}</td>
                   <td>{s.rows_input}</td>

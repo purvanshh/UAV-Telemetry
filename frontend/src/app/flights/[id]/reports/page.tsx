@@ -1,18 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { AppNav } from "@/components/AppNav";
+import { EventChart } from "@/components/EventChart";
 import { EventDetailPanel } from "@/components/EventDetailPanel";
 import { FlightTabs } from "@/components/FlightTabs";
+import { PilotBriefing } from "@/components/PilotBriefing";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { api, exportUrl, OperatorReport, setLastFlightId } from "@/lib/api";
+import { api, EventContext, exportUrl, OperatorReport, setLastFlightId } from "@/lib/api";
 import { clock, duration, num, percent } from "@/lib/format";
 
 type Appendix = {
   detector?: Record<string, unknown> & { features?: string[]; threshold?: number };
   scores?: Record<string, number | null>;
-  events?: { event_id: string; peak_score: number | null; mean_flagged_score: number | null; peak_over_threshold: number | null; window_indices: number[] }[];
+  events?: {
+    event_id: string;
+    peak_score: number | null;
+    mean_flagged_score: number | null;
+    peak_over_threshold: number | null;
+    window_indices: number[];
+    flagged_window_count?: number;
+    affected_signals?: string[];
+  }[];
+  signal_reference?: { feature: string; pilot_label: string; technical_label: string; unit: string | null }[];
   data_quality?: unknown;
   provenance?: unknown;
   grouping_policy?: unknown;
@@ -25,16 +36,66 @@ export default function OperatorReportPage() {
   const [rep, setRep] = useState<OperatorReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [trace, setTrace] = useState("");
+  const [contexts, setContexts] = useState<Record<string, EventContext | null>>({});
 
   useEffect(() => {
     setLastFlightId(flightId);
-    api.operatorReport(flightId).then(setRep).catch((e) => setError(e instanceof Error ? e.message : "Failed to load report"));
+    api
+      .operatorReport(flightId)
+      .then(setRep)
+      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load report"));
     api.evidenceTrace(flightId).then((t) => setTrace(t.formatted)).catch(() => undefined);
   }, [flightId]);
+
+  useEffect(() => {
+    if (!rep) return;
+    let live = true;
+    Promise.all(
+      rep.events.map(async (e) => {
+        try {
+          const ctx = await api.eventContext(flightId, e.event_id);
+          return [e.event_id, ctx] as const;
+        } catch {
+          return [e.event_id, null] as const;
+        }
+      })
+    ).then((entries) => {
+      if (live) setContexts(Object.fromEntries(entries));
+    });
+    return () => {
+      live = false;
+    };
+  }, [rep, flightId]);
 
   const ov = rep?.overview;
   const ap = (rep?.technical_appendix ?? {}) as Appendix;
   const cov = ov?.coverage;
+
+  const beforeByEvent = useMemo(() => {
+    const out: Record<string, Record<string, number | null>> = {};
+    for (const e of rep?.events ?? []) {
+      out[e.event_id] = Object.fromEntries(e.channels.map((c) => [c.signal, c.before?.median ?? null]));
+    }
+    return out;
+  }, [rep]);
+
+  const facts = ov
+    ? [
+        ...(ov.duration.flight_s != null
+          ? [{ label: "Recording", value: duration(ov.duration.flight_s) }]
+          : []),
+        ...(cov?.known
+          ? [
+              {
+                label: "Assessed",
+                value: percent(cov.analysed_fraction),
+                note: `${cov.scored_windows ?? "?"} of ${cov.candidate_windows ?? "?"} windows`,
+              },
+            ]
+          : []),
+        { label: "Periods flagged", value: String(ov.events.length) },
+      ]
+    : [];
 
   return (
     <>
@@ -42,7 +103,8 @@ export default function OperatorReportPage() {
       <main>
         <div className="page-head row between">
           <div>
-            <h1>Flight report</h1>
+            <p className="brief-page-kicker">Deep Analysis · Flight briefing</p>
+            <h1>What happened on this flight</h1>
             <p className="sub mono">{flightId}</p>
           </div>
           <button className="btn no-print" onClick={() => window.print()} disabled={!rep}>
@@ -57,105 +119,135 @@ export default function OperatorReportPage() {
         )}
         {!rep && !error && <p className="muted">Loading…</p>}
 
-        {rep && ov && (
-          <>
-            <section className="section">
-              <h2>1. Flight summary</h2>
-              <VerdictBanner verdict={ov.verdict} />
-              <p>{ov.summary_text}</p>
-              <p className="muted small">
-                Recording: {ov.duration.flight_s != null ? duration(ov.duration.flight_s) : "length not recorded"} ·
-                Events flagged: {ov.events.length}
-                {ov.analyzed_at ? ` · Analysed ${new Date(ov.analyzed_at).toLocaleString()}` : ""}
-              </p>
-            </section>
-
-            <section className="section">
-              <h2>2. Analysis coverage and limitations</h2>
-              <ul>
-                <li>
-                  Data assessed:{" "}
-                  {cov?.known ? `${percent(cov.analysed_fraction)} (${cov.scored_windows ?? "?"} of ${cov.candidate_windows ?? "?"} analysis windows)` : "not recorded for this analysis"}.
-                </li>
-                <li>Only 12 attitude and inertial signals are scored; altitude, pressure, motors and radio inputs are not.</li>
-                <li>The detector reports unusual telemetry, not faults, and gives no cause.</li>
-                {cov?.missing_signals?.length ? <li>Missing signals: {cov.missing_signals.join(", ")}.</li> : null}
-                {ov.warnings.slice(0, 6).map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="section">
-              <h2>3. Detected events</h2>
-              {rep.events.length === 0 && <p className="muted">No events were flagged in the assessed part of the flight.</p>}
-              {rep.events.map((e, i) => (
-                <article key={e.event_id} style={{ marginBottom: "1.75rem" }}>
-                  <h3 style={{ fontSize: "1.05rem" }}>
-                    Event {i + 1} — {e.start_label} to {e.end_label}
-                  </h3>
-                  <EventDetailPanel flightId={flightId} detail={e} showAi={false} />
-                </article>
-              ))}
-            </section>
-
-            <section className="section">
-              <h2>4. Periods that could not be assessed</h2>
-              {rep.unassessed.length === 0 ? (
-                <p className="muted">{cov?.known ? "None recorded." : "Not recorded for this analysis."}</p>
-              ) : (
+        {rep && ov && rep.pilot_report && (
+          <PilotBriefing
+            report={rep.pilot_report}
+            events={Object.values(rep.pilot_events ?? {})}
+            facts={facts}
+            charts={(eventId) => {
+              const ctx = contexts[eventId];
+              if (ctx === undefined) return <p className="muted small">Loading chart…</p>;
+              if (ctx === null) return null;
+              return <EventChart ctx={ctx} before={beforeByEvent[eventId]} maxChannels={3} />;
+            }}
+            technical={
+              <>
+                <h3>Analysis coverage and limitations</h3>
                 <ul>
-                  {rep.unassessed.map((u, i) => (
-                    <li key={i}>
-                      {clock(u.start_rel_s)}–{clock(u.end_rel_s)} ({duration(u.duration_s)}): {u.text}
-                    </li>
+                  <li>
+                    Data assessed:{" "}
+                    {cov?.known
+                      ? `${percent(cov.analysed_fraction)} (${cov.scored_windows ?? "?"} of ${cov.candidate_windows ?? "?"} analysis windows)`
+                      : "not recorded for this analysis"}
+                    .
+                  </li>
+                  <li>
+                    Only the attitude and inertial signals used by the detector are scored; altitude, pressure, motors
+                    and radio inputs are not.
+                  </li>
+                  <li>The detector reports unusual telemetry, not faults, and gives no cause.</li>
+                  {cov?.missing_signals?.length ? <li>Missing signals: {cov.missing_signals.join(", ")}.</li> : null}
+                  {ov.warnings.slice(0, 6).map((w) => (
+                    <li key={w}>{w}</li>
                   ))}
                 </ul>
-              )}
-            </section>
+                <VerdictBanner verdict={ov.verdict} />
 
-            <section className="section">
-              <h2>5. Suggested review actions</h2>
-              <ul>
-                {rep.events.map((e) => (
-                  <li key={e.event_id}>
-                    {e.start_label}–{e.end_label}: {e.suggested_action}
-                  </li>
-                ))}
-                {rep.unassessed.length > 0 && (
-                  <li>Treat the unassessed periods as unknown; review them from the raw log if they matter.</li>
+                <h3>Periods that could not be assessed</h3>
+                {rep.unassessed.length === 0 ? (
+                  <p className="muted">{cov?.known ? "None recorded." : "Not recorded for this analysis."}</p>
+                ) : (
+                  <ul>
+                    {rep.unassessed.map((u, i) => (
+                      <li key={i}>
+                        {clock(u.start_rel_s)}–{clock(u.end_rel_s)} ({duration(u.duration_s)}): {u.text}
+                      </li>
+                    ))}
+                  </ul>
                 )}
-                {rep.events.length === 0 && <li>Review the flight as you normally would; this report adds no findings.</li>}
-              </ul>
-            </section>
 
-            <section className="section">
-              <h2>6. Method and model version</h2>
-              <p>{rep.methodology}</p>
-              <p className="muted small">
-                Model: {String(rep.model_version.model)} ({String(rep.model_version.variant)}), feature schema{" "}
-                {String(rep.model_version.feature_schema_version ?? "n/a")}. {rep.disclaimer}
-              </p>
-            </section>
+                <h3>Detected events — engineering evidence</h3>
+                {rep.events.length === 0 && (
+                  <p className="muted">No events were flagged in the assessed part of the flight.</p>
+                )}
+                {rep.events.map((e) => {
+                  const card = rep.pilot_events?.[e.event_id];
+                  return (
+                    <article key={e.event_id} className="tech-event">
+                      <h4>
+                        {e.event_id} — {e.start_label} to {e.end_label}
+                      </h4>
+                      {card && <p className="small muted">Briefing title: “{card.title}”</p>}
+                      <EventDetailPanel flightId={flightId} detail={e} showAi={false} />
+                      {contexts[e.event_id] && (
+                        <>
+                          <h3>Signal context — all affected channels</h3>
+                          <EventChart ctx={contexts[e.event_id]!} before={beforeByEvent[e.event_id]} />
+                        </>
+                      )}
+                    </article>
+                  );
+                })}
 
-            <details className="appendix">
-              <summary>Technical appendix</summary>
-              <div>
-                <p className="muted small">Model configuration, scores and preprocessing for engineers.</p>
+                <h3>Method and model version</h3>
+                <p>{rep.methodology}</p>
+                <p className="muted small">
+                  Model: {String(rep.model_version.model)} ({String(rep.model_version.variant)}), feature schema{" "}
+                  {String(rep.model_version.feature_schema_version ?? "n/a")}. {rep.disclaimer}
+                </p>
+
+                <h3>Signal reference</h3>
+                {ap.signal_reference?.length ? (
+                  <div className="table-wrap">
+                    <table className="data">
+                      <thead>
+                        <tr>
+                          <th>Signal (engineering)</th>
+                          <th>Engineering label</th>
+                          <th>Pilot briefing label</th>
+                          <th>Unit</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ap.signal_reference.map((s) => (
+                          <tr key={s.feature}>
+                            <td className="mono">{s.feature}</td>
+                            <td>{s.technical_label}</td>
+                            <td>{s.pilot_label}</td>
+                            <td>{s.unit ?? "not established"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="muted small">Not recorded.</p>
+                )}
+
                 <h3>Detector</h3>
                 <p className="small">
                   {String(ap.detector?.model)} · variant {String(ap.detector?.variant)} · window{" "}
                   {String(ap.detector?.window_length)} samples, stride {String(ap.detector?.stride)} · alert limit{" "}
                   <span className="mono">{String(ap.detector?.threshold)}</span>
                 </p>
-                <p className="small">Features: <span className="mono">{ap.detector?.features?.join(", ")}</span></p>
+                <p className="small">
+                  Features: <span className="mono">{ap.detector?.features?.join(", ")}</span>
+                </p>
+
                 <h3>Score summary</h3>
                 <p className="small mono">{JSON.stringify(ap.scores)}</p>
                 {ap.events && ap.events.length > 0 && (
                   <div className="table-wrap">
                     <table className="data">
                       <thead>
-                        <tr><th>Event</th><th>Peak score</th><th>Mean flagged</th><th>Peak ÷ limit</th><th>Windows</th></tr>
+                        <tr>
+                          <th>Event</th>
+                          <th>Peak score</th>
+                          <th>Mean flagged</th>
+                          <th>Peak ÷ limit</th>
+                          <th>Flagged windows</th>
+                          <th>Windows</th>
+                        </tr>
                       </thead>
                       <tbody>
                         {ap.events.map((e) => (
@@ -164,6 +256,7 @@ export default function OperatorReportPage() {
                             <td className="num">{num(e.peak_score)}</td>
                             <td className="num">{num(e.mean_flagged_score)}</td>
                             <td className="num">{num(e.peak_over_threshold)}</td>
+                            <td className="num">{e.flagged_window_count ?? "—"}</td>
                             <td className="num">{e.window_indices.join(", ")}</td>
                           </tr>
                         ))}
@@ -171,29 +264,51 @@ export default function OperatorReportPage() {
                     </table>
                   </div>
                 )}
+
                 <h3>Not implemented</h3>
                 <ul className="small">
                   {Object.values(ap.not_implemented_checks ?? {}).map((t) => (
                     <li key={t}>{t}</li>
                   ))}
                 </ul>
+
                 <h3>Provenance and data quality</h3>
-                <pre className="trace">{JSON.stringify({ provenance: ap.provenance, data_quality: ap.data_quality, grouping_policy: ap.grouping_policy }, null, 2)}</pre>
+                <pre className="trace">
+                  {JSON.stringify(
+                    { provenance: ap.provenance, data_quality: ap.data_quality, grouping_policy: ap.grouping_policy },
+                    null,
+                    2
+                  )}
+                </pre>
                 {trace && (
                   <>
                     <h3>Evidence pipeline trace</h3>
                     <pre className="trace">{trace}</pre>
                   </>
                 )}
+
                 <h3>Downloads</h3>
                 <div className="row no-print">
-                  <a className="btn" href={exportUrl(flightId, "json")}>Report JSON</a>
-                  <a className="btn" href={exportUrl(flightId, "windows.csv")}>Windows CSV</a>
-                  <a className="btn" href={exportUrl(flightId, "events.csv")}>Events CSV</a>
+                  <a className="btn" href={exportUrl(flightId, "json")}>
+                    Report JSON
+                  </a>
+                  <a className="btn" href={exportUrl(flightId, "windows.csv")}>
+                    Windows CSV
+                  </a>
+                  <a className="btn" href={exportUrl(flightId, "events.csv")}>
+                    Events CSV
+                  </a>
                 </div>
-              </div>
-            </details>
-          </>
+              </>
+            }
+          />
+        )}
+
+        {rep && !rep.pilot_report && (
+          <div className="alert alert-info">
+            This report was created by an older version of the analyser and has no pilot briefing. Re-run the analysis
+            to regenerate it.
+          </div>
         )}
       </main>
     </>

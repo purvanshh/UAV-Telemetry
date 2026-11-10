@@ -20,6 +20,7 @@ const USTAT: Record<string, string> = {
   dataset_spec: "known (dataset definition)",
   profile: "stated by dataset profile",
   user_confirmed: "confirmed by you",
+  profile_hypothesis: "profile hypothesis — not applied until verified",
   header_hint: "guessed from name (not used)",
   llm_stated: "AI-stated (not trusted)",
   unknown: "unknown",
@@ -33,6 +34,27 @@ export function AssessmentSummary({ a }: { a: Assessment }) {
       <div className={`alert ${tone}`} role={a.outcome === "ready" ? "status" : "alert"}>
         <strong id="assess-h">{a.headline}</strong>
       </div>
+      {a.format_summary && (
+        <>
+          <h3>Dataset format recognised</h3>
+          <ul className="checklist">
+            {a.format_summary.map((f) => (
+              <li key={f.label} className={f.status === "ok" ? "check-ok" : f.status === "fail" ? "check-fail" : f.status === "info" ? "" : "check-warn"}>
+                <span className="check-icon" aria-hidden="true">
+                  {f.status === "ok" ? "✓" : f.status === "fail" ? "✕" : f.status === "info" ? "•" : "?"}
+                </span>
+                <span>
+                  <strong>{f.label}:</strong> {f.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="muted small">
+            “?” marks a hypothesis that is shown but not applied until it is verified; an unverified fact is never
+            treated as validated.
+          </p>
+        </>
+      )}
       <ul className="checklist">
         {a.checks.map((c) => (
           <li key={c.id} className={`check-${c.status}`}>
@@ -42,15 +64,15 @@ export function AssessmentSummary({ a }: { a: Assessment }) {
           </li>
         ))}
       </ul>
-      {a.outcome !== "ready" && a.detector_inputs.length > 0 && (
+      {a.outcome !== "ready" && !a.format_summary && a.detector_inputs.length > 0 && (
         <>
           <h3>What the deployed detector needs</h3>
           <ul className="checklist">
             {a.detector_inputs.map((g) => (
-              <li key={g.key} className={g.status === "ok" ? "check-ok" : g.role === "pipeline" ? "check-warn" : "check-fail"}>
+              <li key={g.key} className={g.status === "ok" ? "check-ok" : g.role !== "scored" ? "check-warn" : "check-fail"}>
                 <span className="check-icon" aria-hidden="true">{g.status === "ok" ? "✓" : "✕"}</span>
                 {g.label}: {INPUT_TEXT[g.status]}
-                {g.role === "pipeline" && g.status !== "ok" ? " (needed by the current pipeline, not scored)" : ""}
+                {g.role !== "scored" && g.status !== "ok" ? (g.role === "optional" ? " (optional for this layout, not scored)" : " (needed by the pipeline, not scored)") : ""}
               </li>
             ))}
           </ul>
@@ -58,8 +80,23 @@ export function AssessmentSummary({ a }: { a: Assessment }) {
       )}
       {a.needed.length > 0 && (
         <>
-          <h3>What is needed</h3>
+          <h3>What is missing</h3>
           <ul>{a.needed.map((n) => <li key={n}>{n}</li>)}</ul>
+        </>
+      )}
+      {a.next_steps && a.next_steps.length > 0 && (
+        <>
+          <h3>Next steps</h3>
+          <ol>
+            {a.next_steps.map((n) => (
+              <li key={n.kind}>
+                <strong>
+                  {n.kind === "confirm" ? "Confirm (data supports it)" : n.kind === "tilt_test" ? "Needs a physical check" : n.kind === "document" ? "Needs documentation" : "Record in the log"}
+                </strong>
+                : {n.text}
+              </li>
+            ))}
+          </ol>
         </>
       )}
       {a.pipeline_note && <p className="muted small">{a.pipeline_note}</p>}
@@ -177,6 +214,13 @@ export function MappingDetails({
                         </select>
                       )}
                       {c.ambiguity && <div className="small muted">{c.ambiguity}</div>}
+                      {c.handling && c.status === "ignored" && <div className="small muted">{c.handling}</div>}
+                      {c.unit_hypothesis && c.status !== "recognized" && (
+                        <div className="small muted">
+                          {c.evidence_level === "supported" ? "Supported by measurements, awaiting confirmation" : "Hypothesis, unverified"}:{" "}
+                          {c.unit_hypothesis}{c.evidence ? ` — ${c.evidence}` : ""}
+                        </div>
+                      )}
                     </td>
                     <td>
                       {c.role === "signal" || c.role === "time" ? (

@@ -5,8 +5,9 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { AppNav } from "@/components/AppNav";
 import { FlightTabs } from "@/components/FlightTabs";
+import { UploadValidationSummary } from "@/components/UploadValidationSummary";
 import { VerdictBanner } from "@/components/VerdictBanner";
-import { api, ApiError, FlightDetail, Overview, setLastFlightId } from "@/lib/api";
+import { api, ApiError, FlightDetail, Overview, UploadSummary, setLastFlightId } from "@/lib/api";
 import { clock, duration, percent } from "@/lib/format";
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -19,6 +20,7 @@ export default function FlightOverviewPage() {
   const flightId = String(useParams().id || "");
   const [flight, setFlight] = useState<FlightDetail | null>(null);
   const [ov, setOv] = useState<Overview | null>(null);
+  const [uploadSummary, setUploadSummary] = useState<UploadSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,6 +29,10 @@ export default function FlightOverviewPage() {
     const [f, o] = await Promise.all([api.getFlight(flightId), api.overview(flightId)]);
     setFlight(f);
     setOv(o);
+    // Show upload summary for flights not yet analysed
+    if (o.verdict.state === "not_analyzed") {
+      api.uploadSummary(flightId).then(setUploadSummary).catch(() => undefined);
+    }
   }, [flightId]);
 
   useEffect(() => {
@@ -231,6 +237,9 @@ export default function FlightOverviewPage() {
                   <div key={w}>{w}</div>
                 ))}
               </div>
+            )}
+            {!analysed && uploadSummary && (
+              <UploadValidationSummary summary={uploadSummary} />
             )}
           </>
         )}
