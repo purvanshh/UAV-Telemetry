@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.dataset_profiles import Profile, load_profiles, match_profile
+from src.dataset_profiles import Profile, match_profile
 from src.limits import MAX_CSV_COLUMNS, MAX_CSV_ROWS, get_limits
 from src.schema import STREAM_SCHEMA, STREAMS
 from src.timebase import PLAUSIBLE_HZ, normalize_timestamps
@@ -63,6 +63,7 @@ UNMAPPED = "unmapped"
 UNIT_DATASET = "dataset_spec"
 UNIT_USER = "user_confirmed"
 UNIT_PROFILE = "profile"  # stated by a dataset profile (explicit dataset configuration)
+UNIT_HYPOTHESIS = "profile_hypothesis"  # profile states a hypothesis, not a verified fact
 UNIT_HINT = "header_hint"  # inferred from the header text only -> never trusted
 UNIT_LLM = "llm_stated"  # stated by a model -> never trusted
 UNIT_UNKNOWN = "unknown"
@@ -191,7 +192,8 @@ def semantic_note(header: str) -> Optional[str]:
 
 
 def rc_blocked(source: str, canonical: str) -> bool:
-    return bool(_RC_RE.match(source)) and canonical.startswith("des_")
+    """Radio/pilot command channels (``rc_*``) are inputs, never measured or desired signals."""
+    return bool(_RC_RE.match(source))
 
 
 # ---- data classes ------------------------------------------------------------------------
@@ -217,6 +219,13 @@ class ColumnMapping:
     semantics: Optional[str] = None  # where the signal meaning came from
     profile_id: Optional[str] = None
     ignored: bool = False
+    role: Optional[str] = None  # profile role: status | command | motor | control | distance | vertical | signal
+    semantic_status: Optional[str] = None  # verified | candidate | unverified (profile columns)
+    handling: Optional[str] = None
+    evidence: Optional[str] = None
+    unit_hypothesis: Optional[str] = None
+    evidence_level: Optional[str] = None  # verified | supported | unverified (profile-stated facts)
+    frame_sign: int = 1  # sign applied for the model's axis convention once the frame is verified
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -225,7 +234,9 @@ class ColumnMapping:
             "required": self.required, "method": self.method, "validation_status": self.validation_status,
             "ambiguity": self.ambiguity, "notes": list(self.notes), "llm_confidence": self.llm_confidence,
             "unresolved": self.unresolved, "semantics": self.semantics, "profile_id": self.profile_id,
-            "ignored": self.ignored,
+            "ignored": self.ignored, "profile_role": self.role, "semantic_status": self.semantic_status,
+            "handling": self.handling, "evidence": self.evidence, "unit_hypothesis": self.unit_hypothesis,
+            "evidence_level": self.evidence_level, "frame_sign": self.frame_sign,
             "conversion": None if (self.scale, self.offset) == (1.0, 0.0)
             else {"scale": self.scale, "offset": self.offset},
         }
@@ -241,6 +252,7 @@ class SchemaMapping:
     blockers: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
     profile_id: Optional[str] = None
+    baro_optional: bool = False  # profile declares barometer columns optional (not a model input)
 
     @property
     def scoreable(self) -> bool:
@@ -249,6 +261,7 @@ class SchemaMapping:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "version": self.version, "schema_fingerprint": self.schema_fingerprint, "profile_id": self.profile_id,
+            "baro_optional": self.baro_optional,
             "time": self.time.to_dict() if self.time else None,
             "columns": [c.to_dict() for c in self.columns],
             "missing_required": list(self.missing_required),
@@ -312,7 +325,8 @@ def column_stats(s: pd.Series) -> Dict[str, Any]:
     }
 
 
-def inspect_combined(raw: bytes, filename: str = "combined.csv") -> Inspection:
+def inspect_combined(raw: bytes, filename: str = "combined.csv", *, max_rows: int = MAX_CSV_ROWS,
+                     max_columns: int = MAX_CSV_COLUMNS) -> Inspection:
     """Parse headers and data with all resource limits applied. Raises CombinedFileError."""
     lim = get_limits()
     if len(raw) == 0:
@@ -322,8 +336,8 @@ def inspect_combined(raw: bytes, filename: str = "combined.csv") -> Inspection:
             f"'{filename}' is {len(raw) / 1e6:.1f} MB, over the {lim.max_file_bytes / 1e6:.0f} MB upload limit."
         )
     headers = _read_header(raw)
-    if len(headers) > MAX_CSV_COLUMNS:
-        raise CombinedFileError(f"The file has {len(headers)} columns; the limit is {MAX_CSV_COLUMNS}.")
+    if len(headers) > max_columns:
+        raise CombinedFileError(f"The file has {len(headers)} columns; the limit is {max_columns}.")
     if any(h == "" for h in headers):
         raise CombinedFileError("The header row contains an empty column name.")
     seen: Dict[str, int] = {}
@@ -336,13 +350,13 @@ def inspect_combined(raw: bytes, filename: str = "combined.csv") -> Inspection:
             + ", ".join(dups) + ". Rename them so every column is unique."
         )
     try:
-        df = pd.read_csv(io.BytesIO(raw), nrows=MAX_CSV_ROWS + 1, encoding="utf-8-sig")
+        df = pd.read_csv(io.BytesIO(raw), nrows=max_rows + 1, encoding="utf-8-sig")
     except Exception as exc:  # parser errors are user-facing
         raise CombinedFileError(f"Could not read '{filename}' as CSV: {exc}") from exc
     if df.empty:
         raise CombinedFileError("The file has a header but no data rows.")
-    if len(df) > MAX_CSV_ROWS:
-        raise CombinedFileError(f"The file has more than {MAX_CSV_ROWS:,} rows.")
+    if len(df) > max_rows:
+        raise CombinedFileError(f"The file has more than {max_rows:,} rows (limit for this analysis).")
     df.columns = [str(c).strip() for c in df.columns]
     return Inspection(
         filename=filename, size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest(), df=df,
@@ -403,6 +417,18 @@ def _time_mapping(
             return cm
     if profile and profile.time_column and profile.time_unit:
         col = next((h for h in insp.headers if _norm(h) == _norm(profile.time_column)), None)
+        if col and profile.time_unit_status != "verified":
+            lvl = profile.time_unit_status
+            why = ("Supported by measurements in the data but not documented" if lvl == "supported"
+                   else "Hypothesised, with no verifying evidence")
+            return ColumnMapping(
+                source_column=col, canonical=TIME_TARGET, unit=profile.time_unit, expected_unit="us",
+                unit_status=UNIT_HYPOTHESIS, required=True, method="dataset_profile",
+                validation_status=NEEDS_CONFIRMATION, unresolved="unit", semantics="profile", profile_id=profile.id,
+                unit_hypothesis=profile.time_unit, evidence=profile.time_evidence, evidence_level=lvl,
+                ambiguity=f"{why}: the time unit is {profile.time_unit}. {profile.time_evidence} "
+                "The owner must confirm it once (scripts/confirm_profile_facts.py) or supply it with the upload.",
+            )
         if col:
             return ColumnMapping(
                 source_column=col, canonical=TIME_TARGET, unit=profile.time_unit, expected_unit="us",
@@ -466,7 +492,8 @@ def propose_mapping(
       canonical may be omitted to just supply the unit for an already-proposed meaning.
     """
     assignments = dict(assignments or {})
-    m = SchemaMapping(schema_fingerprint=schema_fingerprint(insp.headers), profile_id=profile.id if profile else None)
+    m = SchemaMapping(schema_fingerprint=schema_fingerprint(insp.headers), profile_id=profile.id if profile else None,
+                      baro_optional=bool(profile and not profile.baro_required))
     m.time = _time_mapping(insp, assignments, profile)
     time_col = m.time.source_column if m.time else None
     llm_by_col = {p["source_column"]: p for p in (llm_proposals or []) if p.get("canonical")}
@@ -493,17 +520,37 @@ def propose_mapping(
                 method="deterministic_alias", semantics="dataset_name",
             )
             _apply_unit(base, t.unit, UNIT_DATASET)
+        elif pcol and pcol.canonical is None:
+            # Registered but not a model input: kept as context, meaning left as documented.
+            base = ColumnMapping(
+                source_column=h, ignored=True, method="dataset_profile", profile_id=profile.id, role=pcol.role,
+                semantic_status=pcol.status, handling=pcol.handling, evidence=pcol.evidence,
+            )
+            base.notes = [pcol.handling] if pcol.handling else []
         elif pcol:
             t = TARGETS[pcol.canonical]
             base = ColumnMapping(
                 source_column=h, canonical=pcol.canonical, group=t.group, expected_unit=t.unit, required=t.required,
-                method="dataset_profile", semantics="profile", profile_id=profile.id,
+                method="dataset_profile", semantics="profile", profile_id=profile.id, role=pcol.role,
+                semantic_status=pcol.status, handling=pcol.handling, evidence=pcol.evidence,
+                unit_hypothesis=pcol.unit or pcol.unit_hypothesis,
             )
-            if pcol.unit:
+            base.evidence_level = pcol.unit_status
+            base.frame_sign = pcol.frame_sign
+            if pcol.unit and pcol.unit_status == "verified":
                 _apply_unit(base, pcol.unit, UNIT_PROFILE)
+                if base.validation_status == VALID and pcol.frame_status == "verified" and pcol.frame_sign != 1:
+                    base.scale *= pcol.frame_sign  # documented/confirmed polarity -> model convention
+                    base.offset *= pcol.frame_sign
             else:
+                base.unit = None
+                base.unit_status = UNIT_HYPOTHESIS if (pcol.unit or pcol.unit_hypothesis) else UNIT_UNKNOWN
                 base.validation_status, base.unresolved = NEEDS_CONFIRMATION, "unit"
                 base.ambiguity = pcol.unresolved or "The unit of this column is not documented."
+            if pcol.frame_status != "verified":
+                # Axis/sign convention not confirmed: stays unresolved even if a unit is later supplied.
+                base.validation_status, base.unresolved = NEEDS_CONFIRMATION, "frame"
+                base.ambiguity = pcol.unresolved or "Axis/sign convention is not documented."
         elif profile and profile.is_ignored(h):
             base = ColumnMapping(source_column=h, ignored=True, method="dataset_profile", profile_id=profile.id)
             base.notes = ["Not used by the deployed detector."]
@@ -519,6 +566,9 @@ def propose_mapping(
 
         # 2. explicit user input overrides / completes the proposal
         cm = _user_mapping(h, a, st, base) if a else base
+        if a and pcol and cm.canonical in pcol.never_maps_to:
+            cm = ColumnMapping(source_column=h, validation_status=REJECTED, method="user_confirmed",
+                               ambiguity=f"'{h}' is registered as a {pcol.role} channel and must not be used as '{cm.canonical}'.")
         if cm.canonical and cm.validation_status == VALID:
             _finalize_numeric_check(cm, st)
         if cm.canonical and cm.validation_status in (VALID, NEEDS_CONFIRMATION):
@@ -536,7 +586,7 @@ def propose_mapping(
 
     by_canon = {c.canonical: c for c in m.columns if c.canonical and c.validation_status == VALID}
     for t in TARGETS.values():
-        if t.required and t.canonical not in by_canon:
+        if t.required and t.canonical not in by_canon and not (m.baro_optional and t.group == "BARO"):
             m.missing_required.append(t.canonical)
     for c in m.columns:
         if c.canonical:
@@ -552,6 +602,9 @@ def propose_mapping(
 
 
 def _user_mapping(h: str, a: Dict[str, Any], st: Dict[str, Any], base: ColumnMapping) -> ColumnMapping:
+    if base.unresolved == "frame" and (not a.get("canonical") or a.get("canonical") == base.canonical):
+        base.notes = base.notes + ["Axis/sign convention can only be set in the dataset profile after documentation."]
+        return base
     canon = a.get("canonical") or base.canonical
     cm = ColumnMapping(source_column=h, method="user_confirmed", semantics="user")
     if canon is None:
@@ -568,8 +621,8 @@ def _user_mapping(h: str, a: Dict[str, Any], st: Dict[str, Any], base: ColumnMap
         cm.canonical = None
         cm.validation_status = REJECTED
         cm.ambiguity = (
-            f"'{h}' is a radio/pilot input and cannot be used as '{t.label}'. Provide a column "
-            "holding the aircraft's desired attitude in degrees."
+            f"'{h}' is a radio/pilot command and cannot be used as '{t.label}'. Pilot commands are neither "
+            "measured nor desired attitude."
         )
         return cm
     # A column whose unit a dataset definition/profile already established keeps it; the user
@@ -587,6 +640,9 @@ def _user_mapping(h: str, a: Dict[str, Any], st: Dict[str, Any], base: ColumnMap
         cm.ambiguity = f"Unit '{unit}' cannot be converted exactly to {t.unit}."
         return cm
     _apply_unit(cm, unit, UNIT_USER)
+    if cm.validation_status == VALID and canon == base.canonical and base.frame_sign != 1 and base.unresolved != "frame":
+        cm.scale *= base.frame_sign
+        cm.offset *= base.frame_sign
     return cm
 
 
@@ -635,7 +691,8 @@ def _compute_blockers(m: SchemaMapping, insp: Inspection) -> None:
     for c in m.columns:
         if c.validation_status == AMBIGUOUS:
             b.append(c.ambiguity or f"{c.source_column} is ambiguous.")
-        elif c.required and c.validation_status in (NEEDS_CONFIRMATION, REJECTED) and c.canonical:
+        elif (c.required and c.validation_status in (NEEDS_CONFIRMATION, REJECTED) and c.canonical
+              and not (m.baro_optional and c.group == "BARO")):
             b.append(f"{c.source_column}: {c.ambiguity}")
         elif c.method == "llm_proposed" and c.validation_status == NEEDS_CONFIRMATION:
             m.warnings.append(f"{c.source_column}: AI suggestion for '{c.canonical}' is not applied until its unit is stated.")
@@ -685,7 +742,10 @@ def to_stream_frames(insp: Inspection, mapping: SchemaMapping) -> Dict[str, pd.D
     t_us = time_microseconds(insp, mapping.time)
     used = [c for c in mapping.columns if c.canonical and c.validation_status == VALID]
     frames: Dict[str, pd.DataFrame] = {}
+    baro_ok = {c.canonical for c in used if c.group == "BARO"} >= {"alt", "press", "temp"}
     for group in STREAMS:
+        if group == "BARO" and mapping.baro_optional and not baro_ok:
+            continue  # optional and incomplete: no partial barometer stream is stored
         cols = {"TimeUS": t_us}
         data_names = []
         for c in used:
@@ -703,6 +763,21 @@ def to_stream_frames(insp: Inspection, mapping: SchemaMapping) -> Dict[str, pd.D
             f = f[f[data_names].notna().any(axis=1)]
         frames[group] = f.reset_index(drop=True)
     return frames
+
+
+def build_context_frame(insp: Inspection, mapping: SchemaMapping) -> Optional[pd.DataFrame]:
+    """Raw values of profile-registered context columns (status, commands, motors, ...).
+
+    Kept untouched for reporting and later investigation; never fed to the detector. Rows follow
+    the file order and carry the log-clock time in seconds when the time unit is established.
+    """
+    cols = [c.source_column for c in mapping.columns if c.ignored and c.method == "dataset_profile"]
+    if not cols:
+        return None
+    out = insp.df[cols].copy()
+    if mapping.time is not None and mapping.time.validation_status == VALID:
+        out.insert(0, "t_s", time_microseconds(insp, mapping.time) / 1e6)
+    return out.reset_index(drop=True)
 
 
 def mapping_for_storage(
@@ -759,8 +834,21 @@ def load_combined(
         return res, insp, mapping
 
     res.frames = to_stream_frames(insp, mapping)
+    res.context = build_context_frame(insp, mapping)
     # Everything below is the existing validator: required columns, timestamps, ranges.
-    res.validation = validate_flight(res.frames, filenames=res.filenames, file_sizes=res.file_sizes)
+    res.baro_absent = "BARO" not in res.frames
+    if res.baro_absent and any(c.group == "BARO" and c.validation_status == VALID for c in mapping.columns):
+        res.warnings.append("Only part of the barometer (altitude/pressure/temperature) was provided; the incomplete "
+                            "barometer columns were not used.")
+    if res.baro_absent:
+        res.filenames.pop("BARO", None)
+        res.file_sizes.pop("BARO", None)
+        # file_sha256 keeps all three entries: they are one file's hash, which exact-duplicate detection uses
+        res.warnings.append("No barometer data: this layout does not provide it and it is not a model input.")
+    res.validation = validate_flight(
+        res.frames, filenames=res.filenames, file_sizes=res.file_sizes,
+        required_streams=("IMU", "ATT") if res.baro_absent else STREAMS,
+    )
     if not res.validation.ok:
         res.ok = False
     return res, insp, mapping

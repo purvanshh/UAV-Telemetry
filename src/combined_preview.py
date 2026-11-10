@@ -24,7 +24,7 @@ from src.combined_ingest import (
     load_combined,
     propose_mapping,
 )
-from src.dataset_profiles import Profile, match_profile
+from src.dataset_profiles import Profile, ProfileMatch, match_profile_detailed
 from src.schema_llm import LLM_DISCLOSURE, LLMSchemaResult, propose_schema
 from src.upload import UploadResult
 
@@ -71,7 +71,7 @@ def _column_status(cm) -> str:
 class Analysis:
     """Everything derived from one pass over a combined file."""
 
-    def __init__(self, insp, mapping, result, ts, llm, profile, assessment, errors):
+    def __init__(self, insp, mapping, result, ts, llm, profile, assessment, errors, match=None):
         self.insp: Optional[Inspection] = insp
         self.mapping: Optional[SchemaMapping] = mapping
         self.result: Optional[UploadResult] = result
@@ -80,6 +80,7 @@ class Analysis:
         self.profile: Optional[Profile] = profile
         self.assessment: Dict[str, Any] = assessment
         self.errors: List[str] = errors
+        self.match: Optional[ProfileMatch] = match
 
 
 def analyze_combined(
@@ -97,7 +98,8 @@ def analyze_combined(
         empty = LLMSchemaResult(status="not_requested", message="")
         return Analysis(None, None, None, None, empty, None, build_assessment(None, None, None, None, None, [str(exc)]), [str(exc)])
 
-    profile = profile or match_profile(insp.headers)
+    match = match_profile_detailed(insp.headers) if profile is None else ProfileMatch(profile, "compatible", "")
+    profile = profile or match.profile
     mapping = propose_mapping(insp, assignments=assignments, profile=profile)
     # Only genuinely unfamiliar columns are ever sent: not recognised, not profile-ignored.
     unresolved = [
@@ -114,7 +116,8 @@ def analyze_combined(
     if mapping.scoreable:
         result, _i, _m = load_combined(raw, filename, assignments=assignments, llm_proposals=llm.proposals, profile=profile)
         errors = list(result.all_errors)
-    return Analysis(insp, mapping, result, ts, llm, profile, build_assessment(insp, mapping, result, ts, profile), errors)
+    return Analysis(insp, mapping, result, ts, llm, profile,
+                    build_assessment(insp, mapping, result, ts, profile, match=match), errors, match)
 
 
 def build_combined_preview(

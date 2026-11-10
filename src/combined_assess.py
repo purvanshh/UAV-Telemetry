@@ -20,7 +20,7 @@ from src.combined_ingest import (
     Inspection,
     SchemaMapping,
 )
-from src.dataset_profiles import Profile
+from src.dataset_profiles import Profile, ProfileMatch
 from src.upload import UploadResult
 
 # (key, label, canonical signals, role)
@@ -62,6 +62,7 @@ def build_assessment(
     ts: Optional[Dict[str, Any]],
     profile: Optional[Profile],
     file_errors: Optional[List[str]] = None,
+    match: Optional[ProfileMatch] = None,
 ) -> Dict[str, Any]:
     if insp is None or mapping is None:
         return {
@@ -75,7 +76,7 @@ def build_assessment(
     ignored = [c for c in m.columns if c.ignored]
     unresolved_cols = [c for c in m.columns if c.canonical and c.validation_status in (NEEDS_CONFIRMATION, AMBIGUOUS, REJECTED)]
     unrecognised = [c for c in m.columns if not c.canonical and not c.ignored]
-    required_targets = [t for t in TARGETS.values() if t.required]
+    required_targets = [t for t in TARGETS.values() if t.required and not (m.baro_optional and t.group == "BARO")]
     req_ok = [t for t in required_targets if _state(m, t.canonical) == "ok"]
 
     # --- per detector input group
@@ -91,6 +92,8 @@ def build_assessment(
         else:
             st = "unit_unresolved"
         src = {c.canonical: c.source_column for c in m.columns if c.canonical in canons and c.validation_status == VALID}
+        if key == "baro" and m.baro_optional:
+            role = "optional"
         groups.append({"key": key, "label": label, "role": role, "status": st, "signals": states, "sources": src})
 
     absent = [c for c in m.missing_required if _state(m, c) == "missing"]
@@ -123,8 +126,15 @@ def build_assessment(
     checks: List[Dict[str, Any]] = [
         {"id": "csv", "status": "ok", "text": f"CSV recognised: {len(insp.df):,} rows, {len(insp.headers)} columns."}
     ]
-    if profile:
-        checks.append({"id": "profile", "status": "ok", "text": f"Known layout: {profile.id}."})
+    if profile and match and match.applies:
+        checks.append({"id": "profile", "status": "ok",
+                       "text": f"Dataset format recognised: {profile.label} ({match.kind} layout match)."})
+    elif profile:
+        checks.append({"id": "profile", "status": "ok", "text": f"Known layout: {profile.label}."})
+    elif match and match.kind == "partial" and match.candidate:
+        checks.append({"id": "profile", "status": "fail",
+                       "text": f"The columns resemble {match.candidate.label} but required columns are missing "
+                               f"({', '.join(match.missing_required)}), so that profile was NOT applied."})
     if m.time is None:
         checks.append({"id": "timestamp", "status": "fail", "text": "No time column found."})
     elif m.time.validation_status != VALID:
@@ -156,15 +166,26 @@ def build_assessment(
 
     # --- what is needed
     needed: List[str] = []
+    notes = profile.missing_notes if profile else {}
     for x in missing:
-        if x["canonical"] == "yaw":
+        if x["canonical"] in notes:
+            needed.append(f"{x['label'].capitalize()} ({x['canonical']}): {notes[x['canonical']]}")
+        elif x["canonical"] == "yaw":
             needed.append("A recorded yaw (heading) column in degrees. Yaw cannot be derived from other columns.")
         elif x["canonical"] in ("des_roll", "des_pitch"):
             needed.append(f"A column with the aircraft's desired (setpoint) {x['canonical'][4:]} in degrees. Pilot stick inputs do not qualify.")
         else:
             needed.append(f"A column for {x['label']} ({x['unit']}).")
-    for u in unresolved:
-        needed.append(f"{u['column']}: {u['detail']}")
+    steps = _next_steps(m, profile, absent)
+    covered = {n for st in steps for v in st["facts"].values() for n in (v if isinstance(v, list) else [])}
+    for u in unresolved:  # next steps already cover profile-known facts; list only what they do not
+        if u["column"] not in covered:
+            needed.append(f"{u['column']}: {u['detail']}")
+
+    if match and match.kind == "partial" and match.candidate and outcome != INVALID:
+        outcome = INCOMPATIBLE
+        needed.insert(0, f"Required columns of {match.candidate.label} are missing: {', '.join(match.missing_required)}.")
+    fmt = _format_summary(m, profile, match, ts, absent, unresolved, outcome) if profile and match and match.applies else None
 
     headline = {
         READY: "Ready to analyse",
@@ -188,7 +209,121 @@ def build_assessment(
             "ignored": len(ignored), "unrecognised": len(unrecognised), "unresolved": len(unresolved),
             "required_total": len(required_targets), "required_mapped": len(req_ok),
         },
-        "profile": {"id": profile.id, "documentation_status": profile.documentation_status} if profile else None,
-        "pipeline_note": "Barometer columns are needed by the current pipeline for time alignment but are not "
-                         "scored by the detector." if any(g["key"] == "baro" and g["status"] != "ok" for g in groups) else None,
+        "profile": {"id": profile.id, "version": profile.version, "documentation_status": profile.documentation_status,
+                    "fingerprint": profile.fingerprint} if profile else None,
+        "profile_match": match.to_dict() if match else None,
+        "format_summary": fmt,
+        "pipeline_note": (
+            "Barometer columns are optional for this layout: they are not a model input and no reading is invented."
+            if m.baro_optional else
+            "Barometer columns are needed by the current pipeline for time alignment but are not scored by the detector."
+        ) if any(g["key"] == "baro" and g["status"] != "ok" for g in groups) else None,
+        "next_steps": steps,
     }
+
+
+def _format_summary(m, profile, match, ts, absent, unresolved, outcome) -> List[Dict[str, str]]:
+    by = {c.canonical: c for c in m.columns if c.canonical}
+
+    def names(canons):
+        return ", ".join(by[c].source_column for c in canons if c in by)
+
+    def issue_set(canons):
+        return sorted({by[c].unresolved for c in canons if c in by and by[c].unresolved})
+
+    out: List[Dict[str, str]] = []
+    detail = ""
+    if match.kind != "exact":
+        detail = f"; {len(match.extra_columns)} extra and {len(match.missing_optional)} optional columns absent"
+    out.append({"label": "Schema", "status": "ok",
+                "text": f"{profile.label} recognised ({match.kind} layout{detail}); fingerprint {match.fingerprint}."})
+
+    if m.time is not None and m.time.validation_status == VALID:
+        text = f"'{m.time.source_column}' is {m.time.unit}, verified."
+        st = "ok"
+    elif m.time is not None:
+        hz = f" The measured step is about {ts['est_hz']:.0f} Hz, which is consistent with that unit but does not prove it." if ts and ts.get("est_hz") else ""
+        text = f"Awaiting clarification: '{m.time.source_column}' is hypothesised to be {m.time.unit or '?'}, not verified.{hz}"
+        st = "pending"
+    else:
+        text, st = "No time column.", "missing"
+    out.append({"label": "Timestamp", "status": st, "text": text})
+
+    att = [_state(m, c) for c in ("roll", "pitch")]
+    if all(a == "ok" for a in att):
+        out.append({"label": "Measured attitude", "status": "ok", "text": f"Roll and pitch validated ({names(['roll', 'pitch'])})."})
+    elif "missing" in att:
+        out.append({"label": "Measured attitude", "status": "missing", "text": "Roll and/or pitch not found."})
+    else:
+        out.append({"label": "Measured attitude", "status": "pending",
+                    "text": f"Roll and pitch identified ({names(['roll', 'pitch'])}), subject to validation: unit not verified."})
+
+    imu = ["acc_x", "acc_y", "acc_z", "gyro_x", "gyro_y", "gyro_z"]
+    if all(_state(m, c) == "ok" for c in imu):
+        out.append({"label": "IMU signals", "status": "ok", "text": f"Accelerometer and gyroscope validated ({names(imu)})."})
+    else:
+        what = {"unit": "units not established", "frame": "axis/sign convention not established", "meaning": "meaning not established"}
+        why = "; ".join(what[i] for i in issue_set(imu) if i in what) or "not validated"
+        out.append({"label": "IMU signals", "status": "pending",
+                    "text": f"Candidate accelerometer and gyroscope fields identified ({names(imu)}); {why}."})
+
+    ctx = [c for c in m.columns if c.ignored and c.method == "dataset_profile"]
+    out.append({"label": "Additional fields", "status": "info",
+                "text": f"{len(ctx)} retained as context, not used by the detector ("
+                        + ", ".join(sorted({c.role or 'other' for c in ctx})) + "). Their meanings stay unverified."
+                        if ctx else "None."})
+
+    if outcome == READY:
+        out.append({"label": "Detector compatibility", "status": "ok", "text": "Compatible: every required input is validated."})
+    else:
+        bits = []
+        if absent:
+            bits.append("missing: " + ", ".join(a for a in absent))
+        if unresolved:
+            bits.append("unresolved: " + ", ".join(sorted({u["column"] for u in unresolved})))
+        out.append({"label": "Detector compatibility", "status": "fail", "text": "Not compatible with the deployed detector (" + "; ".join(bits) + ")."})
+    return out
+
+
+def _next_steps(m, profile, absent) -> List[Dict[str, Any]]:
+    """Concrete, minimal actions, kept apart by what can settle them:
+    confirm  - the data already supports it; the owner records agreement once
+    tilt_test - a convention only a physical check (or documentation) can settle
+    document - cannot be tested from this data at all
+    log_signals - required inputs that are not in the file and cannot be derived."""
+    steps: List[Dict[str, Any]] = []
+    if profile is None:
+        return steps
+    buckets: Dict[str, Dict[str, set]] = {"confirm": {}, "tilt_test": {}, "document": {}}
+
+    def put(kind: str, key: str, name: str) -> None:
+        buckets[kind].setdefault(key, set()).add(name)
+
+    if m.time is not None and m.time.validation_status != VALID and m.time.method == "dataset_profile":
+        put("confirm" if profile.time_unit_status == "supported" else "document", "time_unit", m.time.source_column)
+    for c in m.columns:
+        if c.method != "dataset_profile" or not c.canonical or c.validation_status != NEEDS_CONFIRMATION:
+            continue
+        pc = profile.column_for(c.source_column)
+        if pc is None:
+            continue
+        if pc.unit_status != "verified" and pc.fact:
+            put("confirm" if pc.unit_status == "supported" else "document", pc.fact, c.source_column)
+        if pc.frame_status != "verified" and pc.frame_expr:
+            key = pc.frame_expr.lstrip("-")
+            how = (profile.choices.get(key) or {}).get("settled_by", "document")
+            put({"data": "confirm", "tilt_test": "tilt_test"}.get(how, "document"), key, c.source_column)
+    texts = {
+        "confirm": "Measurements in the data support these facts. Review the evidence (python scripts/confirm_profile_facts.py --list) and, if you agree, record your confirmation once.",
+        "tilt_test": "These conventions cannot be decided from the data (every combination reproduces it). Settle them with a physical tilt test or the logger's documentation: "
+                     + "; ".join(f"{k}: {(profile.choices.get(k) or {}).get('how_to_check', '')}" for k in buckets["tilt_test"]),
+        "document": "These cannot be tested from this data and need documentation from whoever built the logger.",
+    }
+    for kind in ("confirm", "tilt_test", "document"):
+        if buckets[kind]:
+            steps.append({"kind": kind, "facts": {k: sorted(v) for k, v in buckets[kind].items()}, "text": texts[kind]})
+    if absent:
+        steps.append({"kind": "log_signals", "facts": {"missing": list(absent)},
+                      "text": "The deployed detector also needs these signals recorded in the log (they cannot be derived): "
+                              + ", ".join(absent) + "."})
+    return steps

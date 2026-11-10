@@ -66,9 +66,14 @@ def canonical_stream_hash(df: pd.DataFrame) -> str:
 
 
 def _combine(hashes: Mapping[str, str]) -> Optional[str]:
-    if not all(s in hashes for s in STREAMS):
-        return None
-    return sha256_bytes("|".join(f"{s}:{hashes[s]}" for s in STREAMS).encode())
+    """One hash over all streams. The formula for the full IMU/ATT/BARO set is unchanged (stored
+    identities stay valid). A flight that legitimately has no barometer (profile-declared optional)
+    is identified over IMU+ATT with a distinct prefix, so it can never equal a three-stream flight."""
+    if all(s in hashes for s in STREAMS):
+        return sha256_bytes("|".join(f"{s}:{hashes[s]}" for s in STREAMS).encode())
+    if "IMU" in hashes and "ATT" in hashes and "BARO" not in hashes:
+        return sha256_bytes(("no-baro|" + "|".join(f"{s}:{hashes[s]}" for s in ("IMU", "ATT"))).encode())
+    return None
 
 
 def _fingerprint(frames: Mapping[str, pd.DataFrame]) -> Dict[str, Any]:
