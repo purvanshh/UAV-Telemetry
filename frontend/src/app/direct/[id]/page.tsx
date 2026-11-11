@@ -139,6 +139,9 @@ export default function DirectAnalysisPage() {
     <>
       <AppNav />
       <main>
+        <Link className="crumb no-print" href="/">
+          ← All flights
+        </Link>
         <div className="page-head row between">
           <div>
             <p className="brief-page-kicker">AI Analysis · Flight briefing</p>
@@ -149,7 +152,7 @@ export default function DirectAnalysisPage() {
             <button className="btn" onClick={() => window.print()} disabled={!view}>
               Print or save as PDF
             </button>
-            <a className="btn" href={api.directExportUrl(id)}>
+            <a className="btn btn-quiet" href={api.directExportUrl(id)}>
               Export JSON
             </a>
           </div>
