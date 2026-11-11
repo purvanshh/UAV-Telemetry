@@ -113,7 +113,7 @@ function ExplanationBox({ flightId, eventId }: { flightId: string; eventId: stri
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
           <span>
             I agree to send a compact summary of this flight&apos;s detected events (times, signal values near
-            each event, coverage and limitations — not the raw telemetry) to OpenAI (GPT-4o mini).
+            each event, coverage and limitations — not the raw telemetry) to an external AI service.
           </span>
         </label>
         <button className="btn" onClick={generate} disabled={!consent || busy}>

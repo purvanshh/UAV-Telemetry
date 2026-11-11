@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { Assessment, Assignments, AutoResult, MappedColumn } from "@/lib/api";
 
 const ICON: Record<string, string> = { ok: "✓", warn: "!", fail: "✕", skip: "–" };
@@ -33,7 +34,21 @@ export function AssessmentSummary({ a }: { a: Assessment }) {
     <section className="section" aria-labelledby="assess-h">
       <div className={`alert ${tone}`} role={a.outcome === "ready" ? "status" : "alert"}>
         <strong id="assess-h">{a.headline}</strong>
+        {a.outcome === "incompatible" && a.missing.length > 0 && (
+          <p style={{ margin: "0.4rem 0 0" }}>
+            Deep Analysis needs signals this file does not contain: {a.missing.map((m) => m.label).join(", ")}.
+          </p>
+        )}
+        {(a.outcome === "incompatible" || a.outcome === "invalid") && (
+          <p style={{ margin: "0.4rem 0 0" }}>
+            You can run <Link href="/upload?mode=ai">AI Analysis</Link> on this file instead, or add the separate IMU,
+            ATT and BARO files for Deep Analysis.
+          </p>
+        )}
       </div>
+      <details className="appendix technical-details">
+        <summary>Technical details (for engineering review)</summary>
+        <div>
       {a.format_summary && (
         <>
           <h3>Dataset format recognised</h3>
@@ -105,6 +120,8 @@ export function AssessmentSummary({ a }: { a: Assessment }) {
           Layout profile <span className="mono">{a.profile.id}</span>: {a.profile.documentation_status}
         </p>
       )}
+        </div>
+      </details>
     </section>
   );
 }
