@@ -117,14 +117,14 @@ export default function AdvancedTelemetryPage() {
       <AppNav flightId={flightId} />
       <main>
         <div className="page-head">
-          <h1>Advanced telemetry</h1>
+          <h1>Technical views</h1>
           <p className="sub mono">{flightId}</p>
         </div>
         <FlightTabs flightId={flightId} />
         <div className="alert alert-info">
           For engineers and investigators: raw scores, thresholds, per-feature reconstruction errors,
           telemetry tables and artifact provenance. The plain-language findings are on the{" "}
-          <Link href={`/flights/${flightId}`}>Overview</Link> and{" "}
+          <Link href={`/flights/${flightId}`}>report</Link> and{" "}
           <Link href={`/flights/${flightId}/timeline`}>Timeline</Link>.
         </div>
 
@@ -136,7 +136,7 @@ export default function AdvancedTelemetryPage() {
               <h2 style={{ marginBottom: 4 }}>Detector run</h2>
               <p className="muted" style={{ margin: 0 }}>
                 Status: <span className="chip">{flight?.status || "…"}</span>{" "}
-                · LSTM scores 12 IMU/ATT features only (BARO excluded)
+                · The detector scores 12 IMU/ATT signals only (BARO excluded)
               </p>
             </div>
             <button className="btn btn-primary" onClick={runAnalyze} disabled={busy}>
@@ -237,7 +237,7 @@ export default function AdvancedTelemetryPage() {
             )}
             {eventFigs.baro && (
               <>
-                <h3>BARO context (not scored by LSTM)</h3>
+                <h3>BARO context (not scored by the detector)</h3>
                 <PlotChart figure={eventFigs.baro as never} />
               </>
             )}
@@ -249,8 +249,8 @@ export default function AdvancedTelemetryPage() {
             <Link className="btn" href={`/flights/${flightId}/ai`}>
               AI diagnostics (experimental chat)
             </Link>
-            <Link className="btn" href={`/flights/${flightId}/reports`}>
-              Operator report &amp; exports
+            <Link className="btn" href={`/flights/${flightId}`}>
+              Report &amp; exports
             </Link>
           </div>
         </section>
