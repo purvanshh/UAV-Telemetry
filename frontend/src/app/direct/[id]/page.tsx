@@ -119,19 +119,22 @@ export default function DirectAnalysisPage() {
   const aiFailed = rep && !usable && rep.status !== "not_requested";
   const lastAttempt = view?.meta.ai_attempt;
 
+  const ov = pilot?.overview;
   const facts =
     s && pilot
       ? [
-          { label: "Rows", value: String(s.data_quality.rows) },
           {
-            label: "Recording",
-            value: s.timing.duration_s ? `${f(s.timing.duration_s.value)} s` : "no usable time column",
-            note:
-              s.timing.duration_s && s.timing.duration_s.basis !== "verified"
-                ? "conditional on the unverified time unit"
-                : undefined,
+            label: "Flight time",
+            value: ov?.duration_s != null ? `${f(ov.duration_s)} s` : "not recorded",
+            note: ov?.time_verified === false ? "approximate — time unit not verified" : undefined,
           },
-          { label: "Periods flagged", value: String(s.events.length) },
+          ...(ov?.sample_rate_hz != null
+            ? [{ label: "Sample rate", value: `${f(ov.sample_rate_hz)} Hz` }]
+            : []),
+          { label: "Periods to check", value: String(ov?.events_to_review ?? pilot.attention.length) },
+          ...(ov?.flight_signals != null
+            ? [{ label: "Flight signals", value: String(ov.flight_signals) }]
+            : []),
         ]
       : [];
 
@@ -144,7 +147,7 @@ export default function DirectAnalysisPage() {
         </Link>
         <div className="page-head row between">
           <div>
-            <p className="brief-page-kicker">AI Analysis · Flight briefing</p>
+            <p className="brief-page-kicker">Flight briefing · AI Analysis</p>
             <h1>What happened on this flight</h1>
             <p className="sub mono">{view?.meta.filename ?? id}</p>
           </div>
@@ -181,88 +184,88 @@ export default function DirectAnalysisPage() {
                 return <DirectEventChart ctx={ctx} maxChannels={3} />;
               }}
               summaryExtra={
-                <>
+                usable && rep?.summary_source === "ai" ? (
                   <div className="ai-summary-block">
-                    {usable && rep!.summary_source === "ai" && (
-                      <div className="ai-note">
-                        <p className="small" style={{ margin: 0 }}>
-                          <span className="label-tag">Optional AI-written narrative</span>
-                        </p>
-                        <p style={{ margin: "0.3rem 0" }}>{rep!.executive_summary}</p>
-                        <p className="small muted" style={{ margin: 0 }}>
-                          Written by an AI model from the computed measurements and checked against them. It is not a
-                          detector result and does not change the briefing above.
-                        </p>
-                      </div>
-                    )}
-                    {!aiFailed && rep?.message && usable && <p className="small muted">{rep.message}</p>}
-                    {rep?.reused_from && (
-                      <p className="small muted">
-                        Reused the report of identical input ({rep.reused_from}); no new AI call was made.
+                    <div className="ai-note">
+                      <p className="small" style={{ margin: 0 }}>
+                        <span className="label-tag">Optional plain-language summary</span>
                       </p>
-                    )}
-
-                    {!usable && (
-                      <details className="ai-optional no-print">
-                        <summary>
-                          {aiFailed ? "AI-written narrative unavailable" : "Optional: add an AI-written narrative"}
-                        </summary>
-                        {aiFailed && (
-                          <div className="alert alert-warn ai-error" role="status">
-                            <span>
-                              <strong>AI narrative not available.</strong>{" "}
-                              {rep!.message || "The AI step did not complete."} The briefing above was computed from
-                              the file and is unaffected.
-                            </span>
-                            {rep!.failure && (
-                              <details className="small">
-                                <summary>Why</summary>
-                                <p>
-                                  {REASON_TEXT[rep!.failure.reason] ?? rep!.failure.reason}
-                                  {rep!.failure.attempts ? ` · ${rep!.failure.attempts} attempt(s)` : ""}
-                                  {rep!.failure.fields && rep!.failure.fields.length
-                                    ? ` · ${rep!.failure.fields.join(", ")}`
-                                    : ""}
-                                </p>
-                              </details>
-                            )}
-                          </div>
-                        )}
-                        <p className="small muted">
-                          This adds a plain-language narrative written by an AI model. The computed briefing is the
-                          primary report and does not depend on it.
+                      <p style={{ margin: "0.3rem 0" }}>{rep.executive_summary}</p>
+                      <p className="small muted" style={{ margin: 0 }}>
+                        Written by an AI model from the measurements above and checked against them. It does not change
+                        the briefing.
+                      </p>
+                      {rep.reused_from && (
+                        <p className="small muted" style={{ margin: 0 }}>
+                          Carried over from an identical earlier upload; no new AI call was made.
                         </p>
-                        <label className="checkline">
-                          <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
-                          <span>{view.consent_text}</span>
-                        </label>
-                        <button className="btn btn-primary" disabled={!consent || busy} onClick={generate}>
-                          {busy
-                            ? "Generating…"
-                            : aiFailed || lastAttempt?.status === "invalid_output"
-                              ? "Try AI narrative again"
-                              : "Add an AI-written narrative"}
-                        </button>
-                      </details>
-                    )}
+                      )}
+                    </div>
+                    {rep.message && <p className="small muted">{rep.message}</p>}
                   </div>
-                </>
+                ) : undefined
               }
               technical={
-                <TechnicalDetails
-                  id={id}
-                  s={s}
-                  op={op}
-                  contexts={contexts}
-                  rep={rep}
-                  usable={usable}
-                  rows={rows}
-                  setRows={setRows}
-                />
+                <>
+                  {!usable && (
+                    <details className="ai-optional no-print">
+                      <summary>
+                        {aiFailed
+                          ? "Optional plain-language summary — unavailable"
+                          : "Optional: add a plain-language summary"}
+                      </summary>
+                      {aiFailed && (
+                        <div className="alert alert-warn ai-error" role="status">
+                          <span>
+                            <strong>No AI summary for this file.</strong>{" "}
+                            {rep!.message || "The AI step did not complete."} Everything above was read directly from
+                            the file and is unaffected.
+                          </span>
+                          {rep!.failure && (
+                            <details className="small">
+                              <summary>Why</summary>
+                              <p>
+                                {REASON_TEXT[rep!.failure.reason] ?? rep!.failure.reason}
+                                {rep!.failure.attempts ? ` · ${rep!.failure.attempts} attempt(s)` : ""}
+                                {rep!.failure.fields && rep!.failure.fields.length
+                                  ? ` · ${rep!.failure.fields.join(", ")}`
+                                  : ""}
+                              </p>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                      <p className="small muted">
+                        This adds a narrative written by an AI model. It is optional; the briefing does not depend on it.
+                      </p>
+                      <label className="checkline">
+                        <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} />
+                        <span>{view.consent_text}</span>
+                      </label>
+                      <button className="btn btn-primary" disabled={!consent || busy} onClick={generate}>
+                        {busy
+                          ? "Generating…"
+                          : aiFailed || lastAttempt?.status === "invalid_output"
+                            ? "Try again"
+                            : "Add a plain-language summary"}
+                      </button>
+                    </details>
+                  )}
+                  <TechnicalDetails
+                    id={id}
+                    s={s}
+                    op={op}
+                    contexts={contexts}
+                    rep={rep}
+                    usable={usable}
+                    rows={rows}
+                    setRows={setRows}
+                  />
+                </>
               }
             />
             <p className="small muted">
-              {view.separation_note} <Link href="/">Back to flights</Link>
+              <Link href="/">Back to flights</Link>
             </p>
           </>
         )}

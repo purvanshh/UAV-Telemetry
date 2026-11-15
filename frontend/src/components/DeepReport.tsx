@@ -78,18 +78,18 @@ export function DeepReport({ flightId }: { flightId: string }) {
   const facts = ov
     ? [
         ...(ov.duration.flight_s != null
-          ? [{ label: "Recording", value: duration(ov.duration.flight_s) }]
+          ? [{ label: "Flight time", value: duration(ov.duration.flight_s) }]
           : []),
         ...(cov?.known
           ? [
               {
-                label: "Assessed",
+                label: "Checked",
                 value: percent(cov.analysed_fraction),
-                note: `${cov.scored_windows ?? "?"} of ${cov.candidate_windows ?? "?"} windows`,
+                note: "share of the recording the model could see",
               },
             ]
           : []),
-        { label: "Periods flagged", value: String(ov.events.length) },
+        { label: "Periods to check", value: String(rep?.pilot_report?.attention.length ?? ov.events.length) },
       ]
     : [];
 

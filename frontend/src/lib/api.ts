@@ -280,11 +280,13 @@ export type EventContext = {
 };
 
 /** Review categories. These order attention; they are not safety or severity ratings. */
-export type PilotReviewLabel = "Review recommended" | "Worth checking" | "No notable change detected";
+export type PilotReviewLabel = "Check this first" | "Worth checking" | "For reference";
 
 export type PilotWhen = {
   display: string;
+  short?: string;
   approximate: string;
+  rows?: string | null;
   start_row: number | null;
   end_row: number | null;
   start_raw?: number | null;
@@ -300,6 +302,13 @@ export type PilotAttention = {
   title: string;
   when: PilotWhen;
   what_happened: string;
+  interpretation?: string | null;
+  interpretation_label?: string | null;
+  confidence?: string | null;
+  physical_values?: string[];
+  command_evidence?: string[];
+  consistency_evidence?: string[];
+  coincident?: string[];
 };
 
 export type PilotEvent = {
@@ -314,6 +323,14 @@ export type PilotEvent = {
   what_to_check: string[];
   source_rows: { start: number | null; end: number | null };
   technical_why: string;
+  interpretation?: string | null;
+  interpretation_label?: string | null;
+  confidence?: string | null;
+  expected?: boolean;
+  significance?: string | null;
+  physical_values?: string[];
+  command_evidence?: string[];
+  consistency_evidence?: string[];
 };
 
 export type PilotReport = {
@@ -322,11 +339,45 @@ export type PilotReport = {
   mode_note: string;
   detection_note: string;
   summary: string;
+  bottom_line?: string | null;
+  time_note?: string;
+  recording_s?: number | null;
+  overview?: {
+    duration_s: number | null;
+    sample_rate_hz: number | null;
+    time_verified: boolean;
+    rows: number;
+    columns: number;
+    signals_available: number;
+    flight_signals?: number;
+    events_total: number;
+    events_to_review: number;
+    events_consistent: number;
+    status_changes: number;
+    sequence?: string[];
+    data_quality: {
+      missing_signals: number;
+      gaps: number;
+      out_of_range: number;
+      short_recording: boolean;
+    };
+  };
+  system_checks?: { id: string; label: string; status: string; summary: string; r?: number | null }[];
+  category_summary?: { category: string; title: string; text: string; events: number }[];
+  status_changes?: { count: number; signals: string[]; note: string };
+  consistent_events?: { event_id: string | null; title: string; when: string; interpretation_label?: string | null }[];
   attention: PilotAttention[];
   key_observations: string[];
   next_steps: { event_id: string; text: string }[];
   limitation: string;
-  other_intervals: { event_id: string | null; review_label: PilotReviewLabel; title: string; when: string }[];
+  other_intervals: {
+    event_id: string | null;
+    review_label: PilotReviewLabel;
+    title: string;
+    when: string;
+    start_rel_s?: number | null;
+    end_rel_s?: number | null;
+  }[];
   what_system_cannot_determine: string[];
   coverage?: {
     analysed_s: number | null;
@@ -654,6 +705,7 @@ export type DirectEventContext = {
   event_id: string;
   axis: string;
   x_is: "raw_ticks" | "row";
+  time_axis?: { offset: number; scale: number; verified: boolean } | null;
   regions: {
     baseline: { start: number; end: number; available: boolean };
     event: { start: number; end: number };

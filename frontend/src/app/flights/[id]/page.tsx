@@ -58,7 +58,7 @@ export default function FlightPage() {
         </Link>
         <div className="page-head row between">
           <div>
-            <p className="brief-page-kicker">Deep Analysis · Flight report</p>
+            <p className="brief-page-kicker">Flight briefing · Deep Analysis</p>
             <h1>What happened on this flight</h1>
             <p className="sub mono">
               {flightId}

@@ -9,19 +9,26 @@ const fmt = (v: number | null | undefined) => {
   return Number(v.toPrecision(4)).toString();
 };
 
+function mmss(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
+}
+
 /** Charts show one line each, so a plural group label reads better in the singular. */
 function chartLabel(label: string): string {
   return label
     .replace(/ readings$/i, " reading")
     .replace(/ inputs$/i, " input")
     .replace(/ attitudes$/i, " attitude")
-    .replace(/ commands$/i, " command");
+    .replace(/ commands$/i, " command")
+    .replace(/ outputs$/i, " output");
 }
 
 /**
  * One small chart per channel with its OWN y-axis (channels differ in scale by orders of magnitude, so they are never
- * drawn on a shared axis), a shared horizontal axis in raw time ticks, and three shaded regions:
- * earlier baseline, the event interval, and the period after it. Dashed lines mark the median in each region.
+ * drawn on a shared axis), a shared horizontal axis in mm:ss from the start of the flight when the time unit is known,
+ * and three shaded regions: earlier baseline, the event interval, and the period after it.
  */
 export function DirectEventChart({
   ctx,
@@ -33,15 +40,20 @@ export function DirectEventChart({
   technical?: boolean;
 }) {
   if (!ctx.channels.length) return <p className="muted">No telemetry is available around this event.</p>;
-  const x0 = ctx.window_start;
-  const x1 = ctx.window_end;
+  const axis = ctx.time_axis ?? null;
+  const pilotAxis = !technical && axis != null;
+  const conv = (v: number) => (pilotAxis && axis ? (v - axis.offset) * axis.scale : v);
+  const label = (v: number) => (pilotAxis ? mmss(v) : fmt(v));
+
+  const x0 = conv(ctx.window_start);
+  const x1 = conv(ctx.window_end);
   const span = x1 - x0 || 1;
   const px = (x: number) => ((x - x0) / span) * W;
   const pct = (x: number) => `${(((x - x0) / span) * 100).toFixed(2)}%`;
   const { baseline, event, post } = ctx.regions;
-  const bx = [px(baseline.start), px(event.start)];
-  const ex = [px(event.start), Math.max(px(event.end), px(event.start) + 2)];
-  const ax = [px(event.end), px(post.end)];
+  const bx = [px(conv(baseline.start)), px(conv(event.start))];
+  const ex = [px(conv(event.start)), Math.max(px(conv(event.end)), px(conv(event.start)) + 2)];
+  const ax = [px(conv(event.end)), px(conv(post.end))];
   const channels = maxChannels ? ctx.channels.slice(0, maxChannels) : ctx.channels;
   const labelCounts = new Map<string, number>();
   for (const c of channels) labelCounts.set(c.label, (labelCounts.get(c.label) ?? 0) + 1);
@@ -50,13 +62,16 @@ export function DirectEventChart({
   return (
     <div className="chart-stack dchart">
       <div className="region-strip" aria-hidden="true">
-        <span style={{ left: 0, width: pct(event.start) }} className="rs-base">
+        <span style={{ left: 0, width: pct(conv(event.start)) }} className="rs-base">
           {baseline.available ? "Before" : "Before: unavailable"}
         </span>
-        <span style={{ left: pct(event.start), width: `calc(${pct(event.end)} - ${pct(event.start)})`, minWidth: "3.2rem" }} className="rs-event">
+        <span
+          style={{ left: pct(conv(event.start)), width: `calc(${pct(conv(event.end))} - ${pct(conv(event.start))})`, minWidth: "3.2rem" }}
+          className="rs-event"
+        >
           During
         </span>
-        <span style={{ left: pct(event.end), right: 0 }} className="rs-post">
+        <span style={{ left: pct(conv(event.end)), right: 0 }} className="rs-post">
           {post.available ? "After" : "After: unavailable"}
         </span>
       </div>
@@ -69,7 +84,8 @@ export function DirectEventChart({
         const y0 = lo - pad;
         const y1 = hi + pad;
         const yy = (v: number) => H - ((v - y0) / (y1 - y0 || 1)) * H;
-        const segs = polylineSegments(c.time, c.values, x0, x1, y0, y1, W, H);
+        const times = pilotAxis ? c.time.map(conv) : c.time;
+        const segs = polylineSegments(times, c.values, x0, x1, y0, y1, W, H);
         const lines: { x: [number, number]; v: number | null; k: string }[] = [
           { x: [bx[0], bx[1]] as [number, number], v: c.before.available ? c.before.median : null, k: "b" },
           { x: [ex[0], ex[1]] as [number, number], v: c.during.median, k: "d" },
@@ -119,16 +135,18 @@ export function DirectEventChart({
         );
       })}
       <div className="chart-axis" aria-hidden="true">
-        <span>{fmt(x0)}</span>
+        <span>{label(x0)}</span>
         <span>
-          during {fmt(event.start)}–{fmt(event.end)}
+          during {label(conv(event.start))}–{label(conv(event.end))}
         </span>
-        <span>{fmt(x1)}</span>
+        <span>{label(x1)}</span>
       </div>
       <p className="muted small">
         {technical
           ? `Horizontal axis: ${ctx.axis}. Each chart has its own vertical scale in raw values. Dashed lines: median before, during and after the event (shown only when available).`
-          : "Each chart has its own vertical scale. Dashed lines show the typical value before, during and after the period. The time unit is not verified."}
+          : pilotAxis
+            ? `Each chart has its own vertical scale. The horizontal axis is time from the start of the flight${axis?.verified ? "" : " (approximate; time unit not verified)"}. Dashed lines show the typical value before, during and after the period.`
+            : "Each chart has its own vertical scale. Dashed lines show the typical value before, during and after the period. The file has no usable time column, so the axis is raw row or tick values."}
         {ctx.segment_limited
           ? " The recording starts or ends too close to the event for a full before or after comparison."
           : ""}
