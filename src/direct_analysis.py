@@ -44,8 +44,10 @@ from src.dataset_profiles import Profile, ProfileMatch, match_profile_detailed
 from src.operator_report import build_operator_report
 from src.pilot_report import friendly_signal_label
 from src.event_engine import build_events, mad_sigma, r6, runs
+from src.flight_relationships import analyse_flight, annotate_events
+from src.telemetry_schema import ColumnSpec, match_schema, resolve_time_header
 
-ANALYSIS_VERSION = "direct-2"
+ANALYSIS_VERSION = "direct-3"
 
 DEFAULT_MAX_ROWS = 500_000
 DEFAULT_MAX_COLUMNS = 100
@@ -96,6 +98,19 @@ GROUP_OF_CANONICAL = {
 }
 ROLE_GROUP = {"command": "pilot_command", "motor": "motor_output", "control": "controller_internal",
               "distance": "distance_height", "vertical": "distance_height", "status": "status_flag"}
+CATEGORY_GROUP = {"attitude": "attitude", "acceleration": "accelerometer", "angular_rate": "gyroscope",
+                  "altitude": "distance_height", "distance": "distance_height", "motor": "motor_output",
+                  "command": "pilot_command", "status": "status_flag", "control": "controller_internal",
+                  "aux": "unclassified"}
+SCHEMA_ROLE = {"measurement": "signal", "command": "command", "output": "motor", "status": "status", "internal": "control"}
+
+
+def _group_of(spec: ColumnSpec) -> str:
+    return CATEGORY_GROUP.get(spec.category, "unclassified")
+
+
+def _role_of(spec: ColumnSpec) -> str:
+    return SCHEMA_ROLE.get(spec.role, spec.role)
 
 
 @dataclass
@@ -202,7 +217,30 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
     match: ProfileMatch = match_profile_detailed(insp.headers)
     profile = match.profile if match.applies else None
     chans = _classify(insp.headers, profile)
-    tcol, tinfo = _find_time(insp.headers, profile)
+
+    # Central telemetry schema: declared meanings, categories, verified units and relationships.
+    smatch = match_schema(insp.headers)
+    schema = smatch.schema if smatch.applies else None
+    canonical_by_header: Dict[str, str] = {}
+    specs: Dict[str, Any] = {}
+    if schema is not None:
+        canon = {spec.canonical: spec for spec in smatch.mapping.values()}
+        specs = canon
+        canonical_by_header = {h: spec.canonical for h, spec in smatch.mapping.items()}
+        tcol = resolve_time_header(insp.headers, smatch)
+        tinfo = {"column": tcol, "unit_hypothesis": schema.time.unit, "status": schema.time.unit_status,
+                 "source": f"telemetry schema {schema.id}", "evidence": schema.time.basis,
+                 "note": "Positions are data rows; seconds use the time column."}
+        for h, spec in smatch.mapping.items():
+            ch = chans[h]
+            ch.canonical, ch.role, ch.group = spec.canonical, _role_of(spec), _group_of(spec)
+            ch.meaning_status = "verified" if spec.description else "unverified"
+            ch.unit_status = spec.unit_status
+            ch.unit = spec.display_unit
+            ch.unit_hypothesis = spec.unit if not spec.unit_applied else None
+            ch.handling = spec.basis
+    else:
+        tcol, tinfo = _find_time(insp.headers, profile)
 
     df = insp.df
     num = pd.DataFrame({h: pd.to_numeric(df[h], errors="coerce") for h in insp.headers})
@@ -257,6 +295,14 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
     table = num.iloc[order].reset_index(drop=True)
     table.insert(0, "__row", order)
     n = len(table)
+    time_s: Optional[np.ndarray] = None
+    dt_s: Optional[float] = None
+    _unit = tinfo.get("unit_hypothesis")
+    _scale = _UNIT_TO_SECONDS.get(_unit) if (tcol and tinfo.get("status") == "verified") else None
+    if tvals is not None and _scale:
+        time_s = (tvals - tvals[0]) * _scale
+        _med_raw = timing.get("median_step_raw")
+        dt_s = float(_med_raw) * _scale if _med_raw else None
     budget.check("timing")
 
     # --- flags / statistics ------------------------------------------------------------------------------------------------
@@ -290,7 +336,17 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
             stats[label]["note"] = "Euclidean norm of the three raw columns; no unit conversion or frame transform applied."
 
     # --- candidate events (see src/event_engine.py for the documented method) ----------------------------------------------------
-    chan_info = {h: {"group": c.group, "role": c.role, "is_flag": c.is_flag, "meaning_status": c.meaning_status} for h, c in chans.items()}
+    chan_info = {}
+    for h, c in chans.items():
+        spec = smatch.mapping.get(h) if schema is not None else None
+        chan_info[h] = {
+            "group": c.group, "role": c.role,
+            "is_flag": (False if (spec is not None and spec.role == "measurement") else
+                        c.is_flag or (spec is not None and spec.category in ("status", "aux"))),
+            "meaning_status": c.meaning_status,
+            "family": ("altitude" if spec is not None and spec.category == "distance" else
+                       spec.category if spec is not None else c.group),
+        }
     events, event_overflow, engine = build_events(table, tcol, tinfo, chan_info, series_ok, timing.get("gaps", []), _UNIT_TO_SECONDS,
                                                   check=budget.check)
     transitions: List[Dict[str, Any]] = []
@@ -301,6 +357,28 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
         for i in idx[:10]:
             transitions.append({"channel": h, "from": _r(y[i]), "to": _r(y[i + 1]), "index": int(i + 1)})
     budget.check("events")
+
+    # --- context-aware relationships and event interpretation ------------------------------------------------------
+    flight: Dict[str, Any] = {}
+    if schema is not None:
+        flight = analyse_flight(
+            table, specs=specs, canonical_by_header=canonical_by_header, time_s=time_s, dt_s=dt_s,
+            time_verified=schema.time.unit_status == "verified", gaps=timing.get("gaps", []), headers=insp.headers,
+        )
+        annotate_events(events, table=table, specs=specs, canonical_by_header=canonical_by_header,
+                        time_s=time_s, relationships=flight.get("relationships", {}),
+                        window=int(engine.get("baseline_window_samples") or 20))
+        for ev in events:
+            cat = ev.get("category")
+            bucket = flight.get("categories", {}).get(
+                "status" if cat == "data_quality" else
+                "command" if cat == "state_transition" else _event_category(ev, canonical_by_header, specs), {})
+            bucket["events"] = int(bucket.get("events", 0)) + 1
+        counts: Dict[str, int] = {}
+        for ev in events:
+            key = ev.get("interpretation") or "unclassified"
+            counts[key] = counts.get(key, 0) + 1
+        flight["interpretation_counts"] = counts
 
     peaks = _peaks(table, tcol, chans, series_ok, tinfo)
 
@@ -343,8 +421,13 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
         "stats": stats, "events": events, "event_overflow": event_overflow, "engine": engine,
         "flag_transitions": transitions[:40], "peaks": peaks, "phases": phases, "correlations": corr, "data_quality": dq,
         "unassessed_periods": unassessed[:30], "series": series, "limitations": limitations,
-        "not_implemented": ["oscillation detection", "commanded-vs-measured tracking"],
-        "limits": lim,
+        "not_implemented": [], "limits": lim, "flight": flight,
+        "schema": ({"id": schema.id, "label": schema.label, "documentation_status": schema.documentation_status,
+                    "time": {"column": tcol, "unit": schema.time.unit, "unit_status": schema.time.unit_status,
+                             "basis": schema.time.basis},
+                    "columns": {h: spec.public() for h, spec in smatch.mapping.items()},
+                    "unmapped": smatch.unmapped, "missing_declared": smatch.missing_required}
+                   if schema is not None else None),
     }
     data["input_fingerprint"] = fingerprint(data)
     data["operator"] = build_operator_report(data)  # derived from the fingerprinted fields; deterministic
@@ -353,7 +436,8 @@ def analyze_table(raw: bytes, filename: str) -> DirectSummary:
 
 def fingerprint(data: Dict[str, Any]) -> str:
     """Stable hash of the deterministic summary (what the model is allowed to see)."""
-    core = {k: data[k] for k in ("file_sha256", "profile", "timing", "stats", "events", "peaks", "phases", "series", "analysis_version")}
+    core = {k: data[k] for k in ("file_sha256", "profile", "schema", "timing", "stats", "events", "peaks", "phases",
+                                  "series", "analysis_version", "flight")}
     return hashlib.sha256(json.dumps(core, sort_keys=True, default=str).encode()).hexdigest()
 
 
@@ -459,6 +543,16 @@ def _phases(table: pd.DataFrame, stats: Dict[str, Any], chans: Dict[str, Channel
                 out.append(ph)
             start = i
     return out
+
+
+def _event_category(ev: Dict[str, Any], canonical_by_header: Dict[str, str], specs: Dict[str, Any]) -> str:
+    """Map an event's changed channels to the schema category that dominates it."""
+    counts: Dict[str, int] = {}
+    for m in ev.get("measurements") or []:
+        canonical = canonical_by_header.get(m.get("channel") or "")
+        category = specs[canonical].category if canonical in specs else "unknown"
+        counts[category] = counts.get(category, 0) + 1
+    return max(counts, key=counts.get) if counts else "unknown"
 
 
 def _key_channels(chans: Dict[str, Channel], ok: List[str]) -> List[str]:
@@ -575,6 +669,11 @@ def event_context(summary: Dict[str, Any], table: pd.DataFrame, event_id: str, m
                     "time": [float(xs[i]) for i in idx], "values": [_r(y[i], 5) for i in idx],
                     "before": m["before"], "during": m["during"], "after": m["after"], "kinds": m["kinds"],
                     "persistence": m.get("persistence"), "shift_sigma": m.get("shift_sigma")})
-    return {"event_id": event_id, "axis": axis, "x_is": x_is, "regions": regions, "channels": chs,
+    time_axis = None
+    if tcol and unit in _UNIT_TO_SECONDS and summary["timing"].get("first_raw") is not None:
+        time_axis = {"offset": float(summary["timing"]["first_raw"]), "scale": _UNIT_TO_SECONDS[unit],
+                     "verified": tinfo.get("status") == "verified"}
+    return {"event_id": event_id, "axis": axis, "x_is": x_is, "time_axis": time_axis,
+            "regions": regions, "channels": chs,
             "window_start": float(xs[lo]), "window_end": float(xs[hi]), "time": [float(xs[i]) for i in base_idx[:: max(1, len(base_idx) // max_points)]],
             "segment_limited": not (b_av and p_av), "baseline_samples": int(w)}

@@ -16,6 +16,12 @@ from typing import Any, Dict, List
 
 from src.event_engine import BASELINE_MIN
 from src.pilot_report import build_direct_pilot_report, direct_event_cards
+from src.flight_relationships import (
+    INTERPRETATION_LABEL,
+    command_sentence,
+    consistency_sentence,
+    physical_summary,
+)
 
 GROUP_LABEL = {
     "motor_output": "motor-labelled", "gyroscope": "gyroscope-labelled", "accelerometer": "accelerometer-labelled",
@@ -111,7 +117,8 @@ def _group_statement(a: Dict[str, Any], by_ch: Dict[str, Dict[str, Any]]) -> str
     k, total = len(a["channels"]), a["n_in_file"]
     chans = ", ".join(sorted(a["channels"]))
     who = (f"Both {label} channels ({chans})" if k == total == 2 else f"All {_n(k)} {label} channels ({chans})") if k == total else f"{_n(k)} of {_n(total)} {label} channels ({chans})"
-    mv = {"higher": "had higher raw values", "lower": "had lower raw values", "mixed": "moved in different raw directions"}[a["direction"]]
+    mv = {"higher": "had higher raw values", "lower": "had lower raw values",
+          "mixed": "moved in different raw directions"}.get(a["direction"], "changed")
     return f"{who} {mv} during the interval, relative to their earlier medians."
 
 
@@ -196,6 +203,7 @@ def event_narrative(ev: Dict[str, Any], timing: Dict[str, Any]) -> Dict[str, Any
         review.append("Check the pilot's control inputs for this period.")
     return {
         "title": event_title(ev),
+        "headline": ev.get("headline") or event_title(ev),
         "when": when_text(ev, timing),
         "what_changed": [channel_line(m) for m in top] + ([f"{len(ms) - len(top)} further channel(s) are listed in the measurements table."] if len(ms) > len(top) else []),
         "same_time": stmts,
@@ -203,6 +211,14 @@ def event_narrative(ev: Dict[str, Any], timing: Dict[str, Any]) -> Dict[str, Any
         "unknown": unknown,
         "review_next": review,
         "why_selected": ev.get("why_selected", ""),
+        "interpretation": ev.get("interpretation"),
+        "interpretation_label": ev.get("interpretation_label") or INTERPRETATION_LABEL.get(ev.get("interpretation") or "", ""),
+        "confidence": ev.get("confidence"),
+        "expected": bool(ev.get("expected")),
+        "significance": ev.get("significance"),
+        "physical_changes": [physical_summary(x) for x in (ev.get("physical_values") or [])[:8]],
+        "command_evidence": [command_sentence(c) for c in (ev.get("command_checks") or [])],
+        "consistency_evidence": [consistency_sentence(c) for c in (ev.get("consistency") or []) if consistency_sentence(c)],
     }
 
 
@@ -256,8 +272,9 @@ def build_operator_report(data: Dict[str, Any]) -> Dict[str, Any]:
         material.append({"issue": "Unverified channel meanings", "detail": "Channels in the events above are raw columns with unverified meanings: " + ", ".join(unv[:12]) + "."})
     if any(not m["before"]["available"] or not m["after"]["available"] for e in events for m in e["measurements"]):
         material.append({"issue": "Incomplete comparison windows", "detail": "Some events are too close to the start or end of the recording for a full before/after comparison; those cells show 'Unavailable'."})
+    flight_ctx = data.get("flight") or {}
     return {
-        "headline": headline, "flight_summary": flight,
+        "headline": headline, "flight_summary": flight, "flight_context": flight_ctx,
         "events": narratives,
         "recommended_review": recs, "data_quality_material": material,
         "pilot_report": build_direct_pilot_report(data),

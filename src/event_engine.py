@@ -114,7 +114,10 @@ def channel_scale(y: np.ndarray) -> Optional[Dict[str, float]]:
     rng = float(np.percentile(f, 99) - np.percentile(f, 1)) or float(np.ptp(f))
     u = np.unique(f)
     gaps = np.diff(u)
-    res = float(gaps[gaps > 0].min()) if len(gaps) else 0.0
+    # A signal with few distinct levels that is declared continuous (gyro, attitude, ...) may simply be
+    # quiet and then step; its level spacing is not a recording resolution. Quantised jitter normally has
+    # many distinct levels, so the resolution guard still applies there.
+    res = float(gaps[gaps > 0].min()) if (len(gaps) and len(u) > 4) else 0.0
     d = np.diff(y)
     d = d[np.isfinite(d)]
     step_sigma = mad_sigma(d) / math.sqrt(2) if len(d) else 0.0
@@ -366,19 +369,21 @@ def build_events(
         found += detect_flat(y, bool(ch.get("is_flag")), w) + detect_missing(y)
         for d in found:
             cat = _category(d["kind"], ch)
-            raw.append({**d, "channel": h, "category": cat, "s": max(0, d["s"]), "e": min(n - 1, d["e"])})
+            raw.append({**d, "channel": h, "category": cat, "family": ch.get("family") or cat,
+                        "s": max(0, d["s"]), "e": min(n - 1, d["e"])})
         check(f"detect:{h}")
     for h in [c for c in series_ok if chans[c].get("is_flag")]:
         y = table[h].to_numpy(float)
         ok = np.isfinite(y)
         idx = np.where(ok[1:] & ok[:-1] & (np.diff(np.where(ok, y, 0)) != 0))[0]
         for i in idx[:10]:
-            raw.append({"kind": "status_change", "channel": h, "category": "state_transition", "s": int(i), "e": int(i + 1),
+            raw.append({"kind": "status_change", "channel": h, "category": "state_transition",
+                        "family": chans[h].get("family") or "status", "s": int(i), "e": int(i + 1),
                         "onset": int(i + 1), "peak_z": None, "sign": 1 if y[i + 1] > y[i] else -1})
     for g in gaps:
         i = g["after_index"]
-        raw.append({"kind": "sampling_gap", "channel": "__time__", "category": "data_quality", "s": int(i), "e": int(i + 1),
-                    "onset": int(i + 1), "peak_z": None, "sign": 0})
+        raw.append({"kind": "sampling_gap", "channel": "__time__", "category": "data_quality", "family": "data_quality",
+                    "s": int(i), "e": int(i + 1), "onset": int(i + 1), "peak_z": None, "sign": 0})
 
     t = table[tcol].to_numpy(float) if tcol else None
     rows = table["__row"].to_numpy()
@@ -396,16 +401,24 @@ def build_events(
     events: List[Dict[str, Any]] = []
     for cat in CATEGORIES:
         items = sorted((r for r in raw if r["category"] == cat), key=lambda r: (r["s"], r["e"]))
+        # Merge within one physical signal family only: attitude behaviour, acceleration,
+        # angular rate, altitude, motor outputs and controller terms are separate stories.
         groups: List[List[Dict[str, Any]]] = []
-        cur_start = cur_end = -10**9
+        by_family: Dict[str, List[Dict[str, Any]]] = {}
         for r in items:
-            r_end = r.get("e_level") or r["e"]
-            if groups and r["s"] <= cur_end + tol and max(cur_end, r_end) - cur_start <= cap:
-                groups[-1].append(r)
-                cur_end = max(cur_end, r_end)
-            else:
-                groups.append([r])
-                cur_start, cur_end = r["s"], r_end
+            by_family.setdefault(str(r.get("family") or cat), []).append(r)
+        for fam_items in by_family.values():
+            fam_items.sort(key=lambda r: (r["s"], r["e"]))
+            cur_start = cur_end = -10**9
+            for r in fam_items:
+                r_end = r.get("e_level") or r["e"]
+                if groups and r["s"] <= cur_end + tol and max(cur_end, r_end) - cur_start <= cap:
+                    groups[-1].append(r)
+                    cur_end = max(cur_end, r_end)
+                else:
+                    groups.append([r])
+                    cur_start, cur_end = r["s"], r_end
+        groups.sort(key=lambda g: (min(r["s"] for r in g), min(r["s"] for r in g)))
         for g in groups:
             s, e = min(r["s"] for r in g), max(r.get("e_level") or r["e"] for r in g)
             chs = sorted({r["channel"] for r in g if r["channel"] != "__time__"})
@@ -417,9 +430,10 @@ def build_events(
             meas.sort(key=lambda m: -(min(m["relative_swing"] or 0.0, 1.5) + (0.5 if m["persistence"] and m["persistence"].startswith("sustained") else 0.0)))
             meas = _cap_keep_groups(meas, MAX_EVENT_CHANNELS)
             kinds = sorted({_kind_for_category(r["kind"], cat) for r in g})
+            family = g[0].get("family") or cat
             span_raw = r6(t[e] - t[s]) if t is not None else None
             ev = {
-                "id": "", "category": cat, "kinds": kinds,
+                "id": "", "category": cat, "kinds": kinds, "family": family,
                 "channels": [m["channel"] for m in meas] or chs[:MAX_EVENT_CHANNELS],
                 "n_channels_involved": len(chs),
                 "start_index": int(s), "end_index": int(e), "n_samples": int(e - s + 1),
@@ -492,7 +506,8 @@ def _associate(events: List[Dict[str, Any]], table: pd.DataFrame, chans: Dict[st
         # group co-movement
         bygroup: Dict[str, List[str]] = {}
         for h, m in by_ch.items():
-            if m["group"] not in (None, "unclassified", "status_flag") and m["shift"] is not None:
+            if (m["group"] not in (None, "unclassified", "status_flag") and m["shift"] is not None
+                    and m.get("direction") is not None):
                 bygroup.setdefault(m["group"], []).append(h)
         for g, hs in bygroup.items():
             if len(hs) >= 2:
