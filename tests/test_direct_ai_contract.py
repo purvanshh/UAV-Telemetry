@@ -85,7 +85,9 @@ def test_successful_structured_report_carries_backend_evidence_and_category(data
     e = rep["events"][0]
     d0 = data["events"][0]
     assert e["category"] == d0["category"] and e["source"]["start_row"] == d0["start_row"] and e["measurements"]
-    assert c.calls[0]["response_format"]["json_schema"]["strict"] and "event_facts" in c.calls[0]["messages"][1]["content"]
+    body = c.calls[0]["messages"][1]["content"]
+    assert c.calls[0]["response_format"]["json_schema"]["strict"]
+    assert '"flight"' in body and '"schema"' in body and '"interpretation"' in body
 
 
 # ---- malformed / incomplete replies ----------------------------------------------------------------------------------------------
@@ -153,11 +155,23 @@ def test_unsupported_claims_inside_a_valid_reply_are_removed_not_fatal(data):
     assert {x["reason"] for x in rep["rejected"]} >= {"fault", "overclaim"}
 
 
-def test_unverified_time_unit_on_raw_ticks_is_repaired_and_recorded(data):
+def test_verified_time_unit_allows_milliseconds_or_seconds(data):
     e = data["events"][0]
     r = json.loads(good_report(data))
     r["events"][0]["summary"] = f"rc_yaw changed at raw time {e['start_raw']:.0f} ms."
     _c, rep = gen(data, json.dumps(r))
+    s = rep["events"][0]["summary"]
+    assert f"{e['start_raw']:.0f} ms" in s
+
+
+def test_unverified_time_unit_on_raw_ticks_is_repaired_and_recorded(data):
+    import copy
+    d = copy.deepcopy(data)
+    d["timing"]["time_basis"]["status"] = "unverified"
+    e = d["events"][0]
+    r = json.loads(good_report(d))
+    r["events"][0]["summary"] = f"rc_yaw changed at raw time {e['start_raw']:.0f} ms."
+    _c, rep = gen(d, json.dumps(r))
     s = rep["events"][0]["summary"]
     assert "raw ticks" in s and " ms" not in s
     assert any(n["action"] == "unverified_time_unit_replaced_with_raw_ticks" for n in rep["normalized"])

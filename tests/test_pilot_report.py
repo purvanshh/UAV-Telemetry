@@ -68,5 +68,5 @@ def test_deep_mode_is_labelled_as_deployed_model_findings():
     p = build_deep_pilot_report(report=None, details=[detail], coverage=None, verdict={}, analysed_s=10, flight_s=12)
     assert p["mode_label"] == "Deep Analysis" and "deployed" in p["mode_note"]
     assert "not confirmed faults" in p["summary"]
-    assert p["attention"][0]["review_label"] == "Review recommended"
+    assert p["attention"][0]["review_label"] == "Check this first"
     assert p["limitation"] == LIMITATION

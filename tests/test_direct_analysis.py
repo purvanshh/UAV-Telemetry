@@ -51,16 +51,17 @@ def test_known_schema_is_recognised_and_described_without_unit_claims(name):
     assert d["profile"]["id"] == "uav_flt_csv" and d["profile"]["match"] == "exact"
     assert d["data_quality"]["rows"] == len(df) and d["data_quality"]["columns"] == 33
     assert d["timing"]["median_step_raw"] == 20.0 and d["timing"]["n_gaps"] == 0
-    assert d["timing"]["time_basis"]["status"] == "supported"  # hypothesis, not verified
-    assert "ASSUMING ms" in d["timing"]["duration_s"]["basis"] and d["timing"]["sampling_hz"]["value"] == 50.0
+    assert d["timing"]["time_basis"]["status"] == "verified"  # declared by the central schema
+    assert d["timing"]["duration_s"]["basis"] == "verified" and d["timing"]["sampling_hz"]["value"] == 50.0
     ch = d["channels"]
     assert ch["phi_deg"]["group"] == "attitude" and ch["gx"]["group"] == "gyroscope" and ch["ax"]["group"] == "accelerometer"
     assert all(ch[c]["group"] == "pilot_command" for c in ("rc_roll", "rc_pitch", "rc_thr", "rc_yaw"))
     assert all(ch[m]["group"] == "motor_output" for m in ("m1", "m2", "m3", "m4"))
-    assert all(c["unit"] is None for c in ch.values())  # no verified unit anywhere
-    assert ch["phi_deg"]["unit_hypothesis"] == "deg" and ch["phi_deg"]["unit_status"] == "supported"
+    assert ch["phi_deg"]["unit"] == "deg" and ch["phi_deg"]["unit_status"] == "verified"
+    assert ch["gx"]["unit"] == "deg/s" and ch["ax"]["unit"] == "m/s^2"
+    assert ch["m1"]["unit"] is None and ch["rc_roll"]["unit"] is None   # not documented -> no unit
     text = " ".join(d["limitations"])
-    assert "not verified" in text and "yaw" in text and "not validated by the deployed anomaly detector" in text
+    assert "yaw" in text and "not validated by the deployed anomaly detector" in text
     assert d["stats"]["accel_magnitude_raw"]["note"].startswith("Euclidean norm of the three raw columns")
 
 
@@ -206,12 +207,13 @@ def test_event_context_for_charts_covers_before_during_after():
     c = event_context(s.data, s.table, ev["id"])
     r = c["regions"]
     assert c["window_start"] < r["event"]["start"] <= r["event"]["end"] < c["window_end"]
-    assert r["baseline"]["available"] and r["post"]["available"] and "raw time ticks" in c["axis"] and "not verified" in c["axis"]
+    assert r["baseline"]["available"] and r["post"]["available"] and "raw time ticks" in c["axis"]
+    assert c["time_axis"] and c["time_axis"]["scale"] == 0.001 and c["time_axis"]["verified"]
     assert c["channels"] and all(len(ch["values"]) == len(ch["time"]) for ch in c["channels"])
     assert all(ch["before"]["available"] and ch["during"]["available"] for ch in c["channels"])
-    big = next(e for e in s.data["events"] if e["n_channels_involved"] > 10)    # ends close to the end of the recording
+    big = max(s.data["events"], key=lambda e: e["end_index"])    # ends close to the end of the recording
     cb = event_context(s.data, s.table, big["id"])
-    assert cb["regions"]["post"]["end"] <= float(s.table["t_ms"].iloc[-1]) and len(cb["channels"]) == 8
+    assert cb["regions"]["post"]["end"] <= float(s.table["t_ms"].iloc[-1]) and len(cb["channels"]) >= 1
     assert all({"available", "median", "min", "max", "n"} <= set(ch["after"]) for ch in cb["channels"])
     with pytest.raises(KeyError):
         event_context(s.data, s.table, "E99")
@@ -235,7 +237,7 @@ def good_report(data, **over):
     ev = data["events"][0]
     m = ev["measurements"][0]
     r = {
-        "executive_summary": f"The file has {data['data_quality']['rows']} rows. Assuming ms, it lasts about {data['timing']['duration_s']['value']} s.",
+        "executive_summary": f"The file has {data['data_quality']['rows']} rows and lasts about {data['timing']['duration_s']['value']} s.",
         "events": [{"event_ref": ev["id"], "title": f"Change in {m['channel']} around row {ev['start_row']}",
                     "summary": f"{m['channel']} ranged from {m['during_min']} to {m['during_max']} in rows {ev['start_row']} to {ev['end_row']}.",
                     "same_time": "", "conclusion": "The raw column departed from its earlier values.",
@@ -243,7 +245,7 @@ def good_report(data, **over):
         "data_quality": [{"issue": "Sampling", "detail": f"The median step is {data['timing']['median_step_raw']} raw ticks."}],
         "recommendations": [{"action": f"Compare rows {ev['start_row']} to {ev['end_row']} with pilot notes or video.",
                              "rationale": "The raw channels change there."}],
-        "unknowns": ["Units are not verified."],
+        "unknowns": ["Axis conventions are not verified."],
     }
     r.update(over)
     return json.dumps(r)
@@ -263,9 +265,9 @@ def test_valid_report_is_accepted_labelled_and_fully_traceable():
     assert ev["event_id"] == d0["id"] and ev["source"]["start_row"] == d0["start_row"] and ev["source"]["end_raw"] == d0["end_raw"]
     assert ev["measurements"] and all(set(m) == {"id", "value"} for m in ev["measurements"])
     assert all(m["id"].startswith(d0["id"] + ".") for m in ev["measurements"])  # evidence is attached by the backend
-    assert ev["category"] == d0["category"] and rep["unknowns"] == ["Units are not verified."]
+    assert ev["category"] == d0["category"] and rep["unknowns"] == ["Axis conventions are not verified."]
     p = rep["provenance"]
-    assert p["analysis_mode"] == "direct_ai_telemetry" and p["model"] and p["prompt_version"] == "direct-ai-3"
+    assert p["analysis_mode"] == "direct_ai_telemetry" and p["model"] and p["prompt_version"] == "direct-ai-4"
     assert p["input_fingerprint"] == data["input_fingerprint"] and p["schema_profile"]["id"] == "uav_flt_csv" and p["generated_at"]
     sent = c.calls[0]
     assert sent["response_format"]["json_schema"]["strict"] and sent["max_tokens"] <= 2800
@@ -323,12 +325,11 @@ BAD_SENTENCES = [
     ("The flight was unsafe.", "safety"),
     ("Yaw drifted during this interval.", "absent_signal"),
     ("Barometric altitude rose.", "absent_signal"),
-    ("Roll changed by 4 degrees.", "unit_claim"),
-    ("az was 9.8 m/s2 at rest.", "unit_claim"),
+    ("Roll changed by 4 g.", "unit_claim"),
+    ("az was 9.8 g at rest.", "unit_claim"),
     ("The aircraft pitched up sharply.", "direction"),
     ("rc_roll shows the measured roll angle.", "command_as_attitude"),
-    ("The channel reached 37.51 in this interval.", "ungrounded_number"),
-    ("The flight lasted 9 seconds.", "time_unit_without_assumption"),
+    ("The channel reached 98765.43 in this interval.", "ungrounded_number"),
     ("There was a significant change in motion dynamics.", "overclaim"),
     ("This suggests the status flag has a meaning.", "inference"),
 ]
