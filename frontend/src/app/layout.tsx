@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "UAV Sentinel",
-  description: "Telemetry intelligence — anomaly detection and AI diagnostics",
+  description: "Agentic Analysis of ARJUNA flight logs",
 };
 
 export default function RootLayout({
