@@ -11,18 +11,21 @@ export function AgentPanel({
   error,
   onRun,
   findingTitle,
+  engineering = false,
 }: {
   view: AnalysisView;
   running: boolean;
   error: string | null;
   onRun: () => void;
   findingTitle: (id: string) => string;
+  engineering?: boolean;
 }) {
   const run: AgentRun | null = view.report;
   const rep = run?.report ?? null;
   const usable = !!rep && (run!.status === "ok" || run!.status === "partial");
   const failed = view.last_attempt ?? (run && !usable ? run : null);
 
+  if (running && engineering) return null;
   if (running) {
     return (
       <section className="agent-panel" aria-live="polite">
@@ -40,6 +43,14 @@ export function AgentPanel({
     );
   }
 
+  if (!usable && engineering) {
+    return failed && failed.status !== "ok" ? (
+      <div className="alert alert-warn small">
+        Last AI investigation: {failed.status}. {failed.message}
+        {failed.failure?.detail ? ` (${failed.failure.detail})` : ""}
+      </div>
+    ) : null;
+  }
   if (!usable) {
     return (
       <section className="agent-panel">
@@ -68,11 +79,11 @@ export function AgentPanel({
   return (
     <section className="agent-panel">
       <p className="kicker">Agentic investigation</p>
-      {rep!.headline && <h2 className="agent-headline">{rep!.headline}</h2>}
-      {rep!.summary && <p className="agent-summary">{rep!.summary}</p>}
+      {!engineering && rep!.headline && <h2 className="agent-headline">{rep!.headline}</h2>}
+      {!engineering && rep!.summary && <p className="agent-summary">{rep!.summary}</p>}
       {run!.status === "partial" && run!.message && <p className="small muted">{run!.message}</p>}
 
-      {rep!.pilot_report_answer && (
+      {!engineering && rep!.pilot_report_answer && (
         <div className="callout">
           <p className="small muted" style={{ margin: 0 }}>
             Answer to the pilot&apos;s report
@@ -97,7 +108,7 @@ export function AgentPanel({
         </>
       )}
 
-      {rep!.recommendations.length > 0 && (
+      {!engineering && rep!.recommendations.length > 0 && (
         <>
           <h3>What to check</h3>
           <ul className="recs">

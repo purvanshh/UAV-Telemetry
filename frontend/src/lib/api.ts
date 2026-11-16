@@ -140,6 +140,7 @@ export type ArjunaSummary = {
   verdict?: { worst: Severity | null; critical: number; warning: number; codes: string[] };
   metadata?: Record<string, unknown> | null;
   conversion?: Conversion;
+  pilot?: PilotView;
   engineer_labels?: {
     reviewed?: boolean;
     reviewed_by?: string;
@@ -147,6 +148,31 @@ export type ArjunaSummary = {
     split?: string;
     labels: { code: string; severity: string; t_start: number; t_end: number; when: string; note?: string; source?: string }[];
   } | null;
+};
+
+export type PilotProblem = {
+  finding_id: string;
+  severity: Severity;
+  code: string;
+  name: string;
+  headline: string;
+  when: string;
+  meaning: string;
+  action: string;
+  likely_false_alarm: boolean;
+  confidence: string;
+  also: string[];
+};
+
+export type PilotView = {
+  status: "critical" | "warning" | "clear" | "not_a_flight" | "unreadable";
+  status_text: string;
+  status_detail: string;
+  problems: PilotProblem[];
+  critical_checks: string[];
+  checklist: string[];
+  not_checked: string[];
+  integrity_warning?: string | null;
 };
 
 export type Conversion = {

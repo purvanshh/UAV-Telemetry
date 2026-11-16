@@ -13,11 +13,11 @@ function formatWhen(iso?: string | null) {
 
 /** Plain list wording. Never says "normal" or "safe". */
 function result(m: AnalysisMeta): { text: string; tone: string } {
-  if (m.refused) return { text: "Not analysed: unknown schema or frames", tone: "s-error" };
-  if (m.classification && m.classification !== "flight") return { text: m.classification.replace("_", " "), tone: "s-caution" };
-  if (m.worst === "critical") return { text: `${m.critical} critical, ${m.warning} warning`, tone: "s-error" };
-  if (m.worst === "warning") return { text: `${m.warning} warning(s)`, tone: "s-attention" };
-  return { text: "Nothing flagged", tone: "s-ok" };
+  if (m.refused) return { text: "Could not read this log", tone: "s-error" };
+  if (m.classification && m.classification !== "flight") return { text: "Not a full flight", tone: "s-caution" };
+  if (m.worst === "critical") return { text: "Do not fly until checked", tone: "s-error" };
+  if (m.worst === "warning") return { text: "Check before next flight", tone: "s-attention" };
+  return { text: "No problems found", tone: "s-ok" };
 }
 
 export default function FlightsPage() {
@@ -60,7 +60,7 @@ export default function FlightsPage() {
         <div className="page-head row between">
           <div>
             <h1>Flights</h1>
-            <p className="sub">Agentic Analysis of ARJUNA flight logs (.ulg) and telemetry CSVs.</p>
+            <p className="sub">Upload a flight log to see what happened and what to check before the next flight.</p>
           </div>
           <Link className="btn btn-primary btn-lg" href="/upload">
             Analyse a new flight
@@ -99,7 +99,7 @@ export default function FlightsPage() {
                       <span className={`chip ${r.tone}`}>{r.text}</span>
                       <br />
                       <span className="mode-tag">
-                        {m.agent?.status === "ok" || m.agent?.status === "partial" ? "investigated by the agent" : "code findings only"}
+                        {m.agent?.status === "ok" || m.agent?.status === "partial" ? "detailed review done" : "automatic checks"}
                       </span>
                     </span>
                     <span className="flight-date">{formatWhen(m.created_at)}</span>

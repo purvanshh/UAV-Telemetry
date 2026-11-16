@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { AgentPanel } from "@/components/AgentPanel";
 import { AppNav } from "@/components/AppNav";
 import { FindingCard } from "@/components/FindingCard";
+import { PilotSummary } from "@/components/PilotSummary";
 import { api, ApiError, AnalysisView, ArjunaSummary } from "@/lib/api";
 import { duration } from "@/lib/format";
 
@@ -77,7 +78,7 @@ function Header({ view, title, sub }: { view: AnalysisView; title: string; sub: 
   return (
     <div className="page-head row between">
       <div>
-        <p className="brief-page-kicker">Agentic Analysis</p>
+        <p className="brief-page-kicker">Flight check</p>
         <h1>{title}</h1>
         <p className="sub">{sub}</p>
       </div>
@@ -113,18 +114,21 @@ function UlogView({ view, running, agentError, onRun }: {
   const tl = s.timeline;
   const conv = s.conversion;
   const title = conv ? conv.source_file : String(ident.flight_id ?? s.file.name);
-  const sub = conv
-    ? `Converted from CSV (${conv.format.label}) to ARJUNA log ${ident.flight_id}`
-    : [ident.vehicle_id, ident.fw_version, ident.log_profile && `${ident.log_profile} profile`, s.file.name]
-        .filter(Boolean)
-        .join(" · ");
+  const sub = [
+    tl?.duration_s != null ? `${duration(tl.duration_s)} recording` : null,
+    tl?.airborne_s != null ? `${duration(tl.airborne_s)} in the air` : null,
+    ident.vehicle_id && ident.vehicle_id !== "unknown" ? String(ident.vehicle_id) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   if (s.refused) {
     return (
       <>
         <Header view={view} title={title} sub={sub} />
+        {s.pilot && <PilotSummary view={view} pilot={s.pilot} running={false} error={null} onRun={onRun} />}
         <div className="alert alert-error" role="alert">
-          <strong>This log was not analysed.</strong> The ARJUNA standard requires the app to stop rather than guess when
+          <strong>For the engineering team:</strong> the ARJUNA standard requires the app to stop rather than guess when
           a log&apos;s schema, frames or profile are unknown:
           <ul>
             {s.compatibility.problems.map((p) => (
@@ -140,6 +144,13 @@ function UlogView({ view, running, agentError, onRun }: {
   return (
     <>
       <Header view={view} title={title} sub={sub} />
+      {s.pilot && <PilotSummary view={view} pilot={s.pilot} running={running} error={agentError} onRun={onRun} />}
+
+      <details className="engineering" id="engineering">
+        <summary>
+          <span>Engineering details</span>
+          <span className="small muted"> — signals, fault codes, physics checks, timeline and how the AI investigated</span>
+        </summary>
       {s.integrity.result === "modified" && (
         <div className="alert alert-error" role="alert">
           <strong>Modified log.</strong> {s.integrity.detail} Every finding below comes from a modified log.
@@ -185,7 +196,7 @@ function UlogView({ view, running, agentError, onRun }: {
         </div>
       </div>
 
-      <AgentPanel view={view} running={running} error={agentError} onRun={onRun} findingTitle={(fid) => titles.get(fid) ?? ""} />
+      <AgentPanel view={view} running={running} error={agentError} onRun={onRun} findingTitle={(fid) => titles.get(fid) ?? ""} engineering />
 
       <section className="section">
         <h2>Findings ({s.findings.length})</h2>
@@ -210,6 +221,7 @@ function UlogView({ view, running, agentError, onRun }: {
       <Timeline s={s} />
       {s.engineer_labels && <Labels s={s} />}
       <Technical s={s} />
+      </details>
     </>
   );
 }
