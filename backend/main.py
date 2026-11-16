@@ -1,4 +1,4 @@
-"""UAV Sentinel FastAPI application."""
+"""UAV Sentinel FastAPI application: Agentic Analysis of ARJUNA flight logs and telemetry CSVs."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ if str(ROOT) not in sys.path:
 
 load_dotenv(ROOT / ".env")
 
-from backend.routers import direct, flights, health  # noqa: E402
+from backend.routers import analyses, health  # noqa: E402
 
 class QuietLocalModelProbes(logging.Filter):
     """Hide OpenCode's vLLM discovery polls against this API.
@@ -49,7 +49,7 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(
     title="UAV Sentinel API",
-    description="Telemetry anomaly detection and AI diagnostics",
+    description="Agentic Analysis of ARJUNA flight logs: code detectors plus an AI investigator",
     version="1.0.0",
     lifespan=_lifespan,
 )
@@ -71,8 +71,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(flights.router)
-app.include_router(direct.router)
+app.include_router(analyses.router)
 
 
 @app.exception_handler(Exception)
