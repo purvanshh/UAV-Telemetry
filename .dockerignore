@@ -1,0 +1,17 @@
+.git
+.env
+.env.*
+**/__pycache__
+*.py[cod]
+.venv
+venv
+frontend
+data
+outputs
+testdata
+tests
+evaluation
+docs
+pages
+*.CSV
+*.csv
