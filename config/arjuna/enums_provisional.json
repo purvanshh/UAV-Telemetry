@@ -1,0 +1,604 @@
+{
+ "enum_table_version": "provisional-0.1",
+ "FLIGHT_MODE": {
+  "0": "manual",
+  "1": "stabilise",
+  "2": "altitude_hold",
+  "3": "position_hold",
+  "4": "mission",
+  "5": "return",
+  "6": "land",
+  "7": "guided",
+  "8": "acro",
+  "9": "brake",
+  "255": "unknown"
+ },
+ "COPTER_MODES": {
+  "0": [
+   1,
+   0,
+   0,
+   "STABILIZE"
+  ],
+  "1": [
+   8,
+   0,
+   0,
+   "ACRO"
+  ],
+  "2": [
+   2,
+   0,
+   0,
+   "ALT_HOLD"
+  ],
+  "3": [
+   4,
+   2,
+   1,
+   "AUTO"
+  ],
+  "4": [
+   7,
+   3,
+   2,
+   "GUIDED"
+  ],
+  "5": [
+   3,
+   0,
+   0,
+   "LOITER"
+  ],
+  "6": [
+   5,
+   3,
+   2,
+   "RTL"
+  ],
+  "7": [
+   4,
+   2,
+   1,
+   "CIRCLE"
+  ],
+  "9": [
+   6,
+   3,
+   2,
+   "LAND"
+  ],
+  "11": [
+   1,
+   0,
+   0,
+   "DRIFT"
+  ],
+  "13": [
+   2,
+   0,
+   0,
+   "SPORT"
+  ],
+  "14": [
+   8,
+   0,
+   0,
+   "FLIP"
+  ],
+  "15": [
+   2,
+   0,
+   0,
+   "AUTOTUNE"
+  ],
+  "16": [
+   3,
+   0,
+   0,
+   "POSHOLD"
+  ],
+  "17": [
+   9,
+   3,
+   2,
+   "BRAKE"
+  ],
+  "18": [
+   7,
+   3,
+   2,
+   "THROW"
+  ],
+  "19": [
+   7,
+   3,
+   2,
+   "AVOID_ADSB"
+  ],
+  "20": [
+   7,
+   3,
+   2,
+   "GUIDED_NOGPS"
+  ],
+  "21": [
+   5,
+   3,
+   2,
+   "SMART_RTL"
+  ],
+  "22": [
+   3,
+   0,
+   0,
+   "FLOWHOLD"
+  ],
+  "23": [
+   7,
+   3,
+   2,
+   "FOLLOW"
+  ],
+  "24": [
+   4,
+   2,
+   1,
+   "ZIGZAG"
+  ],
+  "25": [
+   7,
+   3,
+   2,
+   "SYSTEMID"
+  ],
+  "26": [
+   6,
+   3,
+   2,
+   "AUTOROTATE"
+  ],
+  "27": [
+   5,
+   3,
+   2,
+   "AUTO_RTL"
+  ],
+  "28": [
+   8,
+   0,
+   0,
+   "TURTLE"
+  ]
+ },
+ "LANDED_STATE": {
+  "0": "on_ground",
+  "1": "taking_off",
+  "2": "in_air",
+  "3": "landing",
+  "255": "unknown"
+ },
+ "CONTROL_SOURCE": {
+  "0": "rc",
+  "1": "ground_station",
+  "2": "mission",
+  "3": "autonomy",
+  "4": "fallback",
+  "255": "unknown"
+ },
+ "SETPOINT_SOURCE": {
+  "0": "rc",
+  "1": "mission",
+  "2": "autonomy",
+  "3": "ground_station",
+  "4": "fallback",
+  "255": "unknown"
+ },
+ "FAILSAFE_REASON": {
+  "0": "none",
+  "1": "low_battery",
+  "2": "rc_link_loss",
+  "3": "gcs_link_loss",
+  "4": "gps_loss",
+  "5": "geofence",
+  "6": "ekf_navigation",
+  "7": "vibration",
+  "8": "terrain",
+  "9": "sensors",
+  "10": "dead_reckoning",
+  "11": "adsb",
+  "65535": "unknown"
+ },
+ "SENSOR_STATUS": {
+  "0": "ok",
+  "1": "degraded",
+  "2": "failed",
+  "3": "not_responding",
+  "255": "unknown"
+ },
+ "GPS_FIX": {
+  "0": "no_fix",
+  "1": "2d",
+  "2": "3d",
+  "3": "rtk_float",
+  "4": "rtk_fixed",
+  "255": "unknown"
+ },
+ "POS_SOURCE": {
+  "0": "gps",
+  "1": "optical_flow",
+  "2": "vision",
+  "3": "dead_reckoning",
+  "255": "unknown"
+ },
+ "INNOV_SOURCE": {
+  "0": "gps_position",
+  "1": "gps_velocity",
+  "2": "baro",
+  "3": "rangefinder",
+  "4": "optical_flow",
+  "5": "vision",
+  "6": "magnetometer"
+ },
+ "CONTROLLER_ID": {
+  "0": "rate",
+  "1": "attitude",
+  "2": "altitude",
+  "3": "velocity",
+  "4": "position"
+ },
+ "AXIS": {
+  "0": "roll",
+  "1": "pitch",
+  "2": "yaw",
+  "3": "x",
+  "4": "y",
+  "5": "z"
+ },
+ "RUNS_ON": {
+  "0": "fpga",
+  "1": "arm_core0",
+  "2": "arm_core1",
+  "3": "fallback_processor",
+  "255": "unknown"
+ },
+ "OUTPUT_SOURCE": {
+  "0": "main",
+  "1": "fallback"
+ },
+ "BATTERY_STATUS": {
+  "0": "ok",
+  "1": "low",
+  "2": "critical",
+  "3": "failed",
+  "255": "unknown"
+ },
+ "MISSION_STATE": {
+  "0": "idle",
+  "1": "running",
+  "2": "paused",
+  "3": "complete",
+  "4": "aborted",
+  "255": "unknown"
+ },
+ "LINK_TYPE": {
+  "0": "uart",
+  "1": "spi",
+  "2": "i2c",
+  "3": "can",
+  "4": "ethernet",
+  "5": "radio",
+  "255": "unknown"
+ },
+ "EVENT_CATEGORY": {
+  "0": "power",
+  "1": "sensor",
+  "2": "navigation",
+  "3": "control",
+  "4": "mission",
+  "5": "communication",
+  "6": "security",
+  "7": "system"
+ },
+ "SEVERITY": {
+  "0": "info",
+  "1": "warning",
+  "2": "critical"
+ },
+ "EVENT_SOURCE": {
+  "0": "rc",
+  "1": "ground_station",
+  "2": "fpga",
+  "3": "sensor",
+  "4": "mission",
+  "5": "fallback",
+  "6": "autopilot"
+ },
+ "EVENT_CODES": {
+  "1": [
+   "power_on",
+   7,
+   0
+  ],
+  "2": [
+   "armed",
+   3,
+   0
+  ],
+  "3": [
+   "disarmed",
+   3,
+   0
+  ],
+  "4": [
+   "takeoff",
+   3,
+   0
+  ],
+  "5": [
+   "landed",
+   3,
+   0
+  ],
+  "6": [
+   "mode_change",
+   3,
+   0
+  ],
+  "7": [
+   "gps_failsafe",
+   2,
+   2
+  ],
+  "8": [
+   "gps_glitch",
+   2,
+   1
+  ],
+  "10": [
+   "low_battery",
+   0,
+   1
+  ],
+  "11": [
+   "failsafe_rc",
+   5,
+   2
+  ],
+  "12": [
+   "failsafe_gcs",
+   5,
+   2
+  ],
+  "13": [
+   "failsafe_battery",
+   0,
+   2
+  ],
+  "14": [
+   "failsafe_ekf",
+   2,
+   2
+  ],
+  "15": [
+   "geofence_breach",
+   4,
+   1
+  ],
+  "17": [
+   "ekf_yaw_reset",
+   2,
+   1
+  ],
+  "18": [
+   "ekf_alt_reset",
+   2,
+   1
+  ],
+  "19": [
+   "ekf_source_change",
+   2,
+   0
+  ],
+  "20": [
+   "motor_emergency_stop",
+   3,
+   2
+  ],
+  "21": [
+   "motor_interlock_enabled",
+   3,
+   0
+  ],
+  "22": [
+   "motor_interlock_disabled",
+   3,
+   0
+  ],
+  "23": [
+   "crash_detected",
+   3,
+   2
+  ],
+  "24": [
+   "vibration_failsafe",
+   1,
+   2
+  ],
+  "25": [
+   "sensor_error",
+   1,
+   1
+  ],
+  "26": [
+   "mission_event",
+   4,
+   0
+  ],
+  "27": [
+   "home_set",
+   2,
+   0
+  ],
+  "29": [
+   "compass_error",
+   1,
+   1
+  ],
+  "30": [
+   "parachute",
+   3,
+   2
+  ],
+  "31": [
+   "gps_primary_changed",
+   2,
+   1
+  ],
+  "32": [
+   "ekf_primary_changed",
+   2,
+   1
+  ],
+  "33": [
+   "thrust_loss",
+   3,
+   2
+  ],
+  "34": [
+   "terrain_failsafe",
+   2,
+   2
+  ],
+  "35": [
+   "dead_reckoning_failsafe",
+   2,
+   2
+  ],
+  "36": [
+   "internal_error",
+   7,
+   2
+  ],
+  "37": [
+   "land_complete_maybe",
+   3,
+   0
+  ],
+  "998": [
+   "ardupilot_error_other",
+   7,
+   1
+  ],
+  "999": [
+   "ardupilot_event_other",
+   7,
+   0
+  ]
+ },
+ "AP_EV": {
+  "10": 2,
+  "11": 3,
+  "15": 2,
+  "17": 37,
+  "18": 5,
+  "28": 4,
+  "25": 27,
+  "54": 20,
+  "56": 22,
+  "57": 21,
+  "60": 18,
+  "62": 17,
+  "67": 31,
+  "85": 19,
+  "86": 19,
+  "87": 19,
+  "51": 30
+ },
+ "AP_ERR": {
+  "2": [
+   11,
+   2
+  ],
+  "3": [
+   29,
+   null
+  ],
+  "5": [
+   11,
+   2
+  ],
+  "6": [
+   13,
+   1
+  ],
+  "7": [
+   7,
+   4
+  ],
+  "8": [
+   12,
+   3
+  ],
+  "9": [
+   15,
+   5
+  ],
+  "11": [
+   8,
+   null
+  ],
+  "12": [
+   23,
+   null
+  ],
+  "15": [
+   30,
+   null
+  ],
+  "16": [
+   14,
+   6
+  ],
+  "17": [
+   14,
+   6
+  ],
+  "18": [
+   25,
+   null
+  ],
+  "20": [
+   998,
+   11
+  ],
+  "23": [
+   34,
+   8
+  ],
+  "24": [
+   32,
+   null
+  ],
+  "25": [
+   33,
+   null
+  ],
+  "26": [
+   25,
+   9
+  ],
+  "29": [
+   24,
+   7
+  ],
+  "30": [
+   36,
+   null
+  ],
+  "31": [
+   35,
+   10
+  ]
+ }
+}

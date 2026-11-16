@@ -1,0 +1,18 @@
+{
+  "min_airborne_s": 10,
+  "vibe_warn": 30.0,
+  "vibe_crit": 60.0,
+  "clip_rate_warn": 20.0,
+  "tilt_crit_deg": 60.0,
+  "att_err_rms_warn_deg": 4.0,
+  "att_err_max_warn_deg": 10.0,
+  "motor_sat_s": 1.0,
+  "motor_spread_warn": 0.12,
+  "cell_min_warn": 3.2,
+  "cell_min_crit": 3.0,
+  "cell_sag_warn": 0.8,
+  "rail5v_dip_warn": 0.3,
+  "gps_sats_warn": 6,
+  "gps_hacc_warn": 5.0,
+  "innov_ratio_frac_warn": 0.05
+}
