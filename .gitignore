@@ -28,7 +28,7 @@ htmlcov/
 outputs/
 !outputs/.gitkeep
 data/flights/
-!data/flights/.gitkeep
+data/analyses/
 
 # Synthetic smoke-test flights (generated locally, not part of the repo)
 testdata/
@@ -48,8 +48,4 @@ frontend/.env.local
 # Jupyter
 .ipynb_checkpoints/
 
-# Large model weights (keep configs; track .pth separately if needed)
-# Uncomment if you do not want to commit weights:
-# uav_model/*.pth
-# uav_model/*.pkl
 data/direct/

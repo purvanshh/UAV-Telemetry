@@ -9,19 +9,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN useradd -m -u 1000 user
 WORKDIR /home/user/app
 
-# CPU-only torch keeps the image ~1.5 GB smaller than the default CUDA build.
 COPY requirements.txt .
-RUN pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.0.0" \
- && pip install -r requirements.txt
+RUN pip install -r requirements.txt
 
 COPY --chown=user backend ./backend
 COPY --chown=user src ./src
-COPY --chown=user uav_model ./uav_model
 COPY --chown=user config ./config
 
 # Free Spaces have no persistent disk: uploads live here until the Space restarts.
-ENV DATA_DIR=/home/user/data/flights \
-    DIRECT_DATA_DIR=/home/user/data/direct
+ENV ANALYSIS_DATA_DIR=/home/user/data/analyses
 RUN mkdir -p /home/user/data && chown -R user /home/user/data
 
 USER user
