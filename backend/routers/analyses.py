@@ -22,6 +22,7 @@ from src.agent.sources import SignalError, ULogSource
 from src.agent.symptoms import PHASES, SYMPTOMS, TIME_REFS
 from src.arjuna.analysis import ANALYSIS_VERSION, analyse
 from src.arjuna.convert import convert_csv
+from src.arjuna.pilot import pilot_view
 from src.arjuna.ulog import ArjunaFlight, ArjunaFormatError, is_ulog, load_flight
 from src.limits import get_limits
 
@@ -100,8 +101,9 @@ def _source(st: AnalysisStore, aid: str) -> ULogSource:
 def _view(st: AnalysisStore, aid: str) -> Dict[str, Any]:
     meta, summary = st.load_meta(aid), st.load_summary(aid)
     s = dict(summary)
-    s.pop("series", None)
-    return {"analysis_id": aid, "meta": meta, "summary": s, "report": st.load_report(aid), "label": runner.LABEL,
+    report = st.load_report(aid)
+    s["pilot"] = pilot_view(summary, (report or {}).get("report"))  # plain-language briefing, built on every view
+    return {"analysis_id": aid, "meta": meta, "summary": s, "report": report, "label": runner.LABEL,
             "consent_text": runner.consent_text(), "symptoms": {k: v["label"] for k, v in SYMPTOMS.items()},
             "current_version": ANALYSIS_VERSION}
 

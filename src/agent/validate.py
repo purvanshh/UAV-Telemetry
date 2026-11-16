@@ -23,6 +23,9 @@ MINOR = {"unknown_or_duplicate_finding", "unknown_finding", "unknown_reference"}
 _NUM = re.compile(r"(?<![A-Za-z_\d.\[])[-+−]?\d+(?:[.,]\d+)?(?![A-Za-z_\d\]])")
 _CLOCK = re.compile(r"\b(\d{1,3}):(\d{2}(?:\.\d+)?)\b")
 _IDENT = re.compile(r"\b(?:[A-Za-z_]+\[\d+\]|[A-Za-z]+_\w+|[A-Z]{1,3}\d+\w*|M\d|E\d+|F\d+|T\d+)\b")
+# Engineering identifiers have no place in what a pilot reads.
+_JARGON = re.compile(r"(arjuna_\w+|\b\w+\[\d+\]|\btest[_ ]ratio\b|\binnovation|\bresidual|\bRMS\b|\bp\d{2}\b|\bFLU\b|\bENU\b|"
+                     r"\bT\d+\b|\beta\b|η)", re.I)
 _SAFETY = re.compile(r"\b(safe to fly|is safe|was safe|unsafe|airworthy|unairworthy|cleared (for|to) fly|fit to fly|"
                      r"no (risk|danger))\b", re.I)
 _CERTAIN = re.compile(r"\b(definitely|certainly|undoubtedly|without (a )?doubt|proves?|proven|confirmed (to be|as)|"
@@ -98,12 +101,14 @@ class Checker:
         self.g, self.refs, self.fids = grounding, refs, finding_ids
         self.rejected: List[Dict[str, str]] = []
 
-    def text(self, value: str, where: str, limit: int, cause: bool = False) -> str:
+    def text(self, value: str, where: str, limit: int, cause: bool = False, pilot: bool = False) -> str:
         kept = []
         for s in _sentences((value or "")[: limit * 2]):
             reason = None
             if _SAFETY.search(s):
                 reason = "safety_verdict"
+            elif pilot and _JARGON.search(s):
+                reason = "engineering_jargon_in_pilot_text"
             elif cause and _CERTAIN.search(s):
                 reason = "cause_stated_as_certain"
             else:
@@ -188,18 +193,19 @@ def validate(raw: Dict[str, Any], *, findings: List[Dict[str, Any]], tool_result
 
     recs = []
     for i, r in enumerate((raw.get("recommendations") or [])[: LIMITS["recommendations"]]):
-        action = ck.text(r.get("action", ""), f"recommendations[{i}].action", LIMITS["item"])
+        action = ck.text(r.get("action", ""), f"recommendations[{i}].action", LIMITS["item"], pilot=True)
         if action:
-            recs.append({"action": action, "reason": ck.text(r.get("reason", ""), f"recommendations[{i}].reason", LIMITS["item"], cause=True),
+            recs.append({"action": action, "reason": ck.text(r.get("reason", ""), f"recommendations[{i}].reason", LIMITS["item"],
+                                                             cause=True, pilot=True),
                          "finding_ids": [x for x in (r.get("finding_ids") or []) if x in fmap]})
 
-    headline = ck.text(raw.get("headline", ""), "headline", LIMITS["headline"], cause=True)
-    summary = ck.text(raw.get("summary", ""), "summary", LIMITS["summary"], cause=True)
+    headline = ck.text(raw.get("headline", ""), "headline", LIMITS["headline"], cause=True, pilot=True)
+    summary = ck.text(raw.get("summary", ""), "summary", LIMITS["summary"], cause=True, pilot=True)
     return {
         "headline": headline, "summary": summary, "finding_reviews": reviews, "root_cause_chain": chain,
         "additional_observations": obs,
-        "pilot_report_answer": ck.text(raw.get("pilot_report_answer", ""), "pilot_report_answer", LIMITS["text"], cause=True),
-        "not_checked": [t for t in (ck.text(x, "not_checked", LIMITS["item"]) for x in (raw.get("not_checked") or [])[: LIMITS["not_checked"]]) if t],
+        "pilot_report_answer": ck.text(raw.get("pilot_report_answer", ""), "pilot_report_answer", LIMITS["text"], cause=True, pilot=True),
+        "not_checked": [t for t in (ck.text(x, "not_checked", LIMITS["item"], pilot=True) for x in (raw.get("not_checked") or [])[: LIMITS["not_checked"]]) if t],
         "recommendations": recs, "rejected": [r for r in ck.rejected if r["reason"] not in MINOR],
         "normalized": [r for r in ck.rejected if r["reason"] in MINOR],
         "unreviewed_findings": [r["finding_id"] for r in reviews if not r["reviewed_by_agent"]],

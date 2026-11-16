@@ -119,3 +119,21 @@ def test_missing_values_are_nan_never_zero():
     gps = fl.get("arjuna_gps")
     assert np.isfinite(gps["satellites"]).all()  # real values survive
     assert fl.get("arjuna_flight_event") is None  # topic never written: absent, not zero-filled
+
+
+# ---- pilot briefing -------------------------------------------------------------------------------------------------
+
+def test_pilot_view_is_plain_and_highlights_what_to_do():
+    import re
+    from src.arjuna.pilot import pilot_view
+    v = pilot_view(analyse(load_flight(flight(tilt_spike=75.0, crash_event_at=100.2, motor_bias={2: 0.18}), "x.ulg")))
+    assert v["status"] == "critical" and v["status_text"].startswith("Do not fly")
+    assert v["problems"][0]["severity"] == "critical" and v["problems"][0]["name"] == "Crash or loss of control"
+    assert len({p["code"] for p in v["problems"]}) == len(v["problems"])  # one card per kind of problem
+    assert any("M3 front-left" in c for c in v["checklist"])
+    text = " ".join([v["status_text"], v["status_detail"], *v["checklist"],
+                     *[p[k] for p in v["problems"] for k in ("headline", "meaning", "action")]])
+    assert not re.search(r"arjuna_|\w+\[\d\]|rule:|physics:|RMS|p99", text)
+    assert "battery" not in v["not_checked"]  # the synthetic flight logs its battery
+    clear = pilot_view(analyse(load_flight(flight(), "x.ulg")))
+    assert clear["status"] == "clear" and clear["problems"] == [] and "not a guarantee" in clear["status_detail"]
