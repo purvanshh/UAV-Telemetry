@@ -1,0 +1,19 @@
+{
+  "airframe_version": "quadx-1.40kg-v1",
+  "source": "ARJUNA Dataset Handoff for Purvansh (16 Nov 2026) and Quadcopter simulation model, by Labhesh. Inertia is not published; the eta fit estimates it per flight (see src/arjuna/physics.py).",
+  "mass_kg": 1.40,
+  "arm_projection_m": 0.1732,
+  "yaw_torque_coeff_cq": 0.016,
+  "motor_time_constant_s": 0.03,
+  "hover_throttle": 0.35,
+  "thrust_exponent": 2.0,
+  "inertia_kgm2": null,
+  "min_rate_hz_for_dynamics": 100,
+  "motors": [
+    {"index": 0, "name": "M1 front-right", "x": 1, "y": -1, "spin": -1},
+    {"index": 1, "name": "M2 rear-left", "x": -1, "y": 1, "spin": -1},
+    {"index": 2, "name": "M3 front-left", "x": 1, "y": 1, "spin": 1},
+    {"index": 3, "name": "M4 rear-right", "x": -1, "y": -1, "spin": 1}
+  ],
+  "motor_layout_note": "ArduCopter QUAD/X as converted: x forward, y left (FLU); spin +1 = CW (positive yaw reaction torque), -1 = CCW."
+}
