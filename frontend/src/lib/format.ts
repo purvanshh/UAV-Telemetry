@@ -1,5 +1,3 @@
-import type { VerdictState } from "./api";
-
 /** mm:ss (or h:mm:ss) for seconds into the recording. */
 export function clock(sec: number | null | undefined): string {
   if (sec == null || !Number.isFinite(sec)) return "—";
@@ -26,38 +24,6 @@ export function percent(x: number | null | undefined): string {
 export function num(x: number | null | undefined, digits = 3): string {
   if (x == null || !Number.isFinite(x)) return "—";
   return Number(x.toPrecision(digits)).toString();
-}
-
-/** Short label used in lists. Never says "normal" or "safe". */
-export function verdictLabel(state: VerdictState | null | undefined): string {
-  switch (state) {
-    case "anomalies_detected":
-      return "Unusual telemetry detected";
-    case "no_alerts_adequate_coverage":
-      return "No alerts detected";
-    case "no_alerts_low_coverage":
-      return "No alerts, limited coverage";
-    case "analysis_failed":
-      return "Analysis failed";
-    case "insufficient_data":
-      return "Not enough data";
-    default:
-      return "Not analysed";
-  }
-}
-
-export function verdictTone(state: VerdictState | null | undefined): "attention" | "caution" | "error" | "neutral" {
-  switch (state) {
-    case "anomalies_detected":
-      return "attention";
-    case "no_alerts_low_coverage":
-    case "insufficient_data":
-      return "caution";
-    case "analysis_failed":
-      return "error";
-    default:
-      return "neutral";
-  }
 }
 
 /** Map a series to SVG polyline segments, breaking the line at missing values. */

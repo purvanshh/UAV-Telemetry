@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clock, duration, percent, verdictLabel, verdictTone, polylineSegments } from "../src/lib/format.ts";
+import { clock, duration, percent, polylineSegments } from "../src/lib/format.ts";
 
 test("clock formats mm:ss and h:mm:ss", () => {
   assert.equal(clock(0), "00:00");
@@ -18,19 +18,6 @@ test("duration and percent handle missing values", () => {
   assert.equal(percent(null), "—");
 });
 
-test("verdict labels never claim normal or safe", () => {
-  const states = [
-    "anomalies_detected", "no_alerts_adequate_coverage", "no_alerts_low_coverage",
-    "analysis_failed", "insufficient_data", "not_analyzed", null,
-  ];
-  for (const s of states) {
-    const label = verdictLabel(s).toLowerCase();
-    assert.ok(!label.includes("normal") && !label.includes("safe"), label);
-  }
-  assert.equal(verdictTone("no_alerts_low_coverage"), "caution");
-  assert.equal(verdictTone("anomalies_detected"), "attention");
-  assert.equal(verdictTone("analysis_failed"), "error");
-});
 
 test("a gap in the data breaks the plotted line instead of bridging it", () => {
   const segs = polylineSegments([0, 1, 2, 3], [1, 2, null, 4], 0, 3, 0, 4, 100, 50);
