@@ -63,6 +63,8 @@ origins = [o.strip() for o in cors_raw.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    # e.g. r"https://uav-sentinel(-[a-z0-9-]+)?\.vercel\.app" to admit Vercel preview deploys.
+    allow_origin_regex=os.environ.get("CORS_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
