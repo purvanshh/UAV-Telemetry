@@ -166,7 +166,7 @@ export function runIntro(canvas: HTMLCanvasElement, cb: IntroCallbacks, opts: { 
   const layout = () => {
     W = window.innerWidth;
     H = window.innerHeight;
-    dpr = Math.min(window.devicePixelRatio || 1, W * H > 1.4e6 ? 1.5 : 2);
+    dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(3.4e6 / (W * H))));
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
     S = Math.min((W * (W < 700 ? 0.72 : 0.4)) / 632, (H * 0.56) / 657);
@@ -408,7 +408,7 @@ export function runIntro(canvas: HTMLCanvasElement, cb: IntroCallbacks, opts: { 
     g.addColorStop(0, "#ffffff");
     g.addColorStop(1, "#e9eef6");
     ctx.shadowColor = "rgba(150,195,255,0.85)";
-    ctx.shadowBlur = glow * 0.45;
+    ctx.shadowBlur = z > 1.4 ? 0 : glow * 0.45;
     ctx.fillStyle = g;
     ctx.fill(logoPath);
     ctx.restore();
@@ -419,7 +419,7 @@ export function runIntro(canvas: HTMLCanvasElement, cb: IntroCallbacks, opts: { 
   const WORD_W = 600; // logo units
   const WORD_TOP = 752;
   const drawWordmark = (a: number, z: number, glow: number, pop: number) => {
-    if (a <= 0) return;
+    if (a <= 0.003 || pop <= 0.003) return;
     const fs = 100;
     ctx.save();
     ctx.translate(cx, cy);
@@ -435,17 +435,19 @@ export function runIntro(canvas: HTMLCanvasElement, cb: IntroCallbacks, opts: { 
     ctx.translate(LOGO_CX - WORD_W / 2, WORD_TOP + cap);
     ctx.scale(k, k);
     ctx.shadowColor = "rgba(150,195,255,0.8)";
-    ctx.shadowBlur = (glow * 0.45) / k;
+    ctx.shadowBlur = z > 1.4 ? 0 : (glow * 0.45) / k;
     ctx.fillStyle = "#f2f5fa";
     let x = 0;
     [...WORD].forEach((ch, i) => {
       const lp = easeOutCubic(clamp01(pop * 1.7 - i * 0.12));
-      ctx.globalAlpha = a * lp;
-      ctx.save();
-      ctx.translate(x, (1 - lp) * 14);
-      ctx.transform(1.12, 0, -0.2 * 1.12, 1, 0, 0);
-      ctx.fillText(ch, 0, 0);
-      ctx.restore();
+      if (lp > 0.003) {
+        ctx.globalAlpha = a * lp;
+        ctx.save();
+        ctx.translate(x, (1 - lp) * 14);
+        ctx.transform(1.12, 0, -0.2 * 1.12, 1, 0, 0);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+      }
       x += widths[i] + gap;
     });
     ctx.restore();
