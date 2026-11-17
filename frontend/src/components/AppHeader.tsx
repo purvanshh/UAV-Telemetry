@@ -2,22 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, GitCompareArrows, List, Plus } from "lucide-react";
+import { GitCompareArrows, List, Plus } from "lucide-react";
+import { LogoMark } from "@/components/LogoMark";
 
 const NAV = [
   { href: "/", label: "Flights", icon: List, match: (p: string) => p === "/" || p.startsWith("/analysis") },
   { href: "/compare", label: "Compare", icon: GitCompareArrows, match: (p: string) => p.startsWith("/compare") },
-  { href: "/system", label: "System", icon: Activity, match: (p: string) => p.startsWith("/system") },
 ];
-
-/** The arrowhead mark: ARJUNA is the archer. */
-function Mark() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path d="M12 2 21 21l-9-5-9 5L12 2Z" fill="currentColor" />
-    </svg>
-  );
-}
 
 export function AppHeader() {
   const path = usePathname() || "/";
@@ -26,7 +17,7 @@ export function AppHeader() {
       <div className="app-header-inner">
         <Link href="/" className="brand" aria-label="ARJUNA home">
           <span className="brand-mark">
-            <Mark />
+            <LogoMark height={18} />
           </span>
           <span className="brand-text">ARJUNA</span>
         </Link>
