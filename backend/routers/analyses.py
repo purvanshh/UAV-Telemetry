@@ -210,7 +210,11 @@ def _decimate(t: np.ndarray, y: np.ndarray, n: int = MAX_POINTS) -> tuple:
 
 def _charts(src: Any, sigs: List[tuple], a: float, b: float) -> List[Dict[str, Any]]:
     groups: Dict[str, Dict[str, Any]] = {}
+    seen: set = set()
     for topic, field, inst in sigs:
+        if (topic, field, inst) in seen:
+            continue
+        seen.add((topic, field, inst))
         try:
             t, y, unit = src.series(topic, field, inst)
         except SignalError:

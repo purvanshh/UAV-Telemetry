@@ -1,112 +1,132 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, ScanSearch } from "lucide-react";
 import { SignalChart } from "@/components/SignalChart";
+import { Pill, Skeleton } from "@/components/ui";
 import { api, ChartPack, Finding, FindingReview } from "@/lib/api";
+import { SEVERITY_TONE } from "@/lib/status";
 
-const ASSESS: Record<string, string> = {
-  confirmed: "Confirmed by the agent",
-  likely_false_alarm: "Likely false alarm",
-  needs_review: "Needs review",
+const ASSESS: Record<string, { text: string; tone: "go" | "caution" | "neutral" }> = {
+  confirmed: { text: "Confirmed by review", tone: "go" },
+  likely_false_alarm: { text: "Likely false alarm", tone: "caution" },
+  needs_review: { text: "Needs review", tone: "neutral" },
 };
 
-function v(x: number | null | undefined, unit: string | null | undefined) {
+function value(x: number | null | undefined, unit: string | null | undefined) {
   if (x == null || !Number.isFinite(x)) return "—";
   const a = Math.abs(x);
   const s = a >= 100 ? x.toFixed(0) : Number(x.toPrecision(3)).toString();
   return unit ? `${s} ${unit}` : s;
 }
 
-export function FindingCard({ id, finding, review, codeLabel, open: initial }: {
+/** One detector finding with its evidence and signals. Charts load the first time the card is opened. */
+export function FindingCard({ id, finding, review, codeLabel, defaultOpen, target }: {
   id: string;
   finding: Finding;
   review?: FindingReview;
   codeLabel?: string;
-  open?: boolean;
+  defaultOpen?: boolean;
+  target?: boolean;
 }) {
-  const [open, setOpen] = useState(!!initial);
+  const [open, setOpen] = useState(!!defaultOpen || !!target);
   const [ctx, setCtx] = useState<ChartPack | null | undefined>(undefined);
+  const el = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!target) return;
+    setOpen(true);
+    const t = window.setTimeout(() => el.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 120);
+    return () => window.clearTimeout(t);
+  }, [target]);
 
   useEffect(() => {
     if (!open || ctx !== undefined) return;
     api.findingContext(id, finding.id).then(setCtx).catch(() => setCtx(null));
   }, [open, ctx, id, finding.id]);
 
+  const tone = SEVERITY_TONE[finding.severity] ?? "neutral";
   return (
-    <article id={finding.id} className={`finding sev-${finding.severity}`}>
+    <article ref={el} id={finding.id} className={`finding${target ? " is-target" : ""}`} style={{ scrollMarginTop: 80 }}>
       <button type="button" className="finding-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <span className={`sev sev-${finding.severity}`}>{finding.severity}</span>
-        <span className="code-chip" title={codeLabel}>{finding.code}</span>
+        <ChevronRight className="chev" size={16} aria-hidden="true" />
+        <Pill tone={tone}>{finding.severity === "critical" ? "Serious" : "Check"}</Pill>
         <span className="finding-title">{finding.title}</span>
-        <span className="finding-when mono">{finding.window === "whole_flight" ? "whole flight" : finding.when}</span>
-        {review && review.reviewed_by_agent && (
-          <span className={`assess assess-${review.assessment}`}>{ASSESS[review.assessment]}</span>
-        )}
+        <span className="finding-meta">
+          {review?.reviewed_by_agent && <Pill tone={ASSESS[review.assessment].tone}>{ASSESS[review.assessment].text}</Pill>}
+          <span className="code" title={codeLabel}>
+            {finding.code}
+          </span>
+          <span className="tiny muted mono">{finding.window === "whole_flight" ? "whole flight" : finding.when}</span>
+        </span>
       </button>
-      {open && (
-        <div className="finding-body">
-          {review?.reviewed_by_agent && (review.explanation || review.suggested_cause || review.check_next) && (
-            <div className="review">
-              {review.explanation && <p>{review.explanation}</p>}
-              {review.suggested_cause && (
-                <p>
-                  <span className="label-tag">Suggested cause</span> {review.suggested_cause}
-                </p>
-              )}
-              {review.check_next && (
-                <p>
-                  <span className="label-tag">Check next</span> {review.check_next}
-                </p>
-              )}
-              {review.evidence_refs.length > 0 && (
-                <p className="small muted mono">Evidence: {review.evidence_refs.join(", ")}</p>
-              )}
-            </div>
-          )}
-          {review && !review.reviewed_by_agent && (
-            <p className="small muted">The agent did not review this finding; it stands as the code found it.</p>
-          )}
-          <p className="small">
-            <span className="muted">Found by</span> <span className="mono">{finding.detector}</span>
-            <span className="muted"> · confidence</span> {finding.confidence}
-            {codeLabel ? <span className="muted"> · {codeLabel}</span> : null}
-          </p>
-          {finding.basis && <p className="small muted">{finding.basis}</p>}
-          <div className="table-wrap">
-            <table className="data stat-table">
-              <thead>
-                <tr>
-                  <th>Signal</th>
-                  <th>Statistic</th>
-                  <th>Value</th>
-                  <th>At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {finding.evidence.map((e, i) => (
-                  <tr key={i}>
-                    <td className="mono">
-                      {e.topic}
-                      {e.instance ? `[${e.instance}]` : ""}.{e.field}
-                    </td>
-                    <td>{e.stat}</td>
-                    <td className="num">{v(e.value, e.unit)}</td>
-                    <td className="mono">{e.at ?? ""}</td>
+      <div className={`disclosure-body${open ? " is-open" : ""}`} inert={!open}>
+        <div>
+          <div className="finding-body">
+            {review?.reviewed_by_agent && (review.explanation || review.suggested_cause || review.check_next) && (
+              <div className="review">
+                <div className="eyebrow row" style={{ gap: "0.35rem", color: "var(--accent)" }}>
+                  <ScanSearch size={13} aria-hidden="true" /> Detailed review
+                </div>
+                {review.explanation && <p>{review.explanation}</p>}
+                {review.suggested_cause && (
+                  <p>
+                    <strong>Suggested cause:</strong> {review.suggested_cause}
+                  </p>
+                )}
+                {review.check_next && (
+                  <p>
+                    <strong>Check next:</strong> {review.check_next}
+                  </p>
+                )}
+                {review.evidence_refs.length > 0 && <p className="tiny muted mono">Evidence: {review.evidence_refs.join(", ")}</p>}
+              </div>
+            )}
+            <p className="small text-2">
+              {finding.basis} <span className="muted">Found by {finding.detector}, confidence {finding.confidence}.</span>
+            </p>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Signal</th>
+                    <th>Measure</th>
+                    <th className="num">Value</th>
+                    <th className="num">At</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {ctx === undefined && <p className="muted small">Loading signals…</p>}
-          {ctx && ctx.charts.length > 0 && (
-            <div className="sig-grid">
-              {ctx.charts.map((c) => (
-                <SignalChart key={c.title + c.unit} chart={c} window={ctx.window} highlight={ctx.highlight} />
-              ))}
+                </thead>
+                <tbody>
+                  {finding.evidence.map((e, i) => (
+                    <tr key={i}>
+                      <td className="mono">
+                        {e.topic}
+                        {e.instance ? `[${e.instance}]` : ""}.{e.field}
+                      </td>
+                      <td>{e.stat}</td>
+                      <td className="num">{value(e.value, e.unit)}</td>
+                      <td className="num">{e.at ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          )}
+            {open && ctx === undefined && (
+              <div className="sig-grid" aria-busy="true" aria-label="Loading signals">
+                <Skeleton h={190} r={10} />
+                <Skeleton h={190} r={10} />
+              </div>
+            )}
+            {ctx && ctx.charts.length > 0 && (
+              <div className="sig-grid">
+                {ctx.charts.map((c, i) => (
+                  <SignalChart key={`${c.title}-${c.unit}-${i}`} chart={c} window={ctx.window} highlight={ctx.highlight} />
+                ))}
+              </div>
+            )}
+            {ctx === null && <p className="small muted">The signals for this finding could not be loaded.</p>}
+          </div>
         </div>
-      )}
+      </div>
     </article>
   );
 }
