@@ -1,5 +1,5 @@
 {
-  "min_airborne_s": 10,
+  "min_airborne_s": 0,
   "vibe_warn": 30.0,
   "vibe_crit": 60.0,
   "clip_rate_warn": 20.0,

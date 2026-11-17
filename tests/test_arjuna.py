@@ -108,10 +108,10 @@ def test_crash_event_tilt_and_dropouts():
     assert any(m["level"] == "critical" for m in a["timeline"]["important_messages"])
 
 
-def test_ground_only_log_is_not_checked_as_a_flight():
+def test_short_flight_is_analysed_as_a_flight():
     a = analyse(load_flight(flight(takeoff_s=50, landing_s=55), "x.ulg"))
-    assert a["classification"]["kind"] == "ground_only" and a["findings"] == []
-    assert "not a flight" in a["coverage"]["VIB_HIGH"]["reasons"][0]
+    assert a["classification"]["kind"] == "flight"
+    assert a["classification"]["min_airborne_s"] == 0
 
 
 def test_missing_values_are_nan_never_zero():

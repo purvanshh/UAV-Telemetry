@@ -54,7 +54,7 @@ def test_a_small_change_is_not_called_an_improvement():
 
 
 def test_non_flights_cannot_be_compared():
-    _, ground = run(takeoff_s=50, landing_s=55)
+    _, ground = run(takeoff_s=500, landing_s=500)
     _, good = run()
     r = compare(ground, good)
     assert r["status"] == "not_comparable" and "not a full flight" in r["status_detail"]
@@ -81,7 +81,7 @@ def test_preflight_not_ready_when_the_test_found_a_serious_problem_or_vibration(
 
 
 def test_preflight_bench_run_works_but_says_flight_behaviour_was_not_tested():
-    fl, a = run(takeoff_s=50, landing_s=55)
+    fl, a = run(takeoff_s=500, landing_s=500)
     r = preflight_check(fl, a)
     by = {c["id"]: c for c in r["checks"]}
     assert by["flight"]["status"] == "unknown" and "did not fly" in by["flight"]["detail"]

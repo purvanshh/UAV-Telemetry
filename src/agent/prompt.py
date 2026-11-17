@@ -55,8 +55,8 @@ THE DATA (conventions you must apply when reading tool results)
   motor i+1. In hover all four carry the weight equally unless something is wrong. If motors are named m1..m4
   (identity.motor_layout = unknown), the corners are NOT known: never name a corner, side, diagonal or spin direction.
 - Converted CSVs: identity.source_format = csv. The overview's conversion report lists which columns were mapped,
-  every unit/frame assumption and what was dropped. State an assumption when a conclusion depends on it. A CSV may
-  set its own minimum air time (classification.min_airborne_s) for short test hops.
+  every unit/frame assumption and what was dropped. State an assumption when a conclusion depends on it. There is no minimum air
+  time: a flight of any length is analysed.
 - Converted logs: if identity.source_format is set, the log was converted from another autopilot. Rates are low
   (attitude/controller/motors ~10 Hz, IMU ~25 Hz, GPS 5 Hz), FPGA timing, firewall, fallback, filtered IMU, optical
   flow, vision, proximity and detection topics do not exist, and the battery is often missing. Mode, event and status

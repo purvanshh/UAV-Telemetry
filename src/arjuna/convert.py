@@ -66,7 +66,7 @@ class Plan:
     mappings: List[Mapping] = field(default_factory=list)
     dropped: List[Dict[str, str]] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)
-    min_airborne_s: float = 10.0
+    min_airborne_s: float = 0.0
     min_alt_range_m: float = 2.0
     motor_layout: str = "unknown"
     rc_map: Dict[str, int] = field(default_factory=dict)
@@ -180,13 +180,13 @@ def _match_known(headers: List[str]) -> Optional[Tuple[Dict[str, Any], Dict[str,
 
 def _plan_known(fmt: Dict[str, Any], col: Dict[str, str], num: pd.DataFrame, t_s: np.ndarray) -> Plan:
     p = Plan(fmt["id"], fmt["label"], fmt.get("basis", ""), col[fmt["time"]["column"]], fmt["time"]["unit"],
-             "unit from the format definition", min_airborne_s=float(fmt.get("min_airborne_s", 10.0)),
+             "unit from the format definition", min_airborne_s=float(fmt.get("min_airborne_s", 0.0)),
              motor_layout=fmt.get("motor_layout", "unknown"), rc_map=dict(fmt.get("rc_map", {})),
              min_alt_range_m=float(fmt.get("min_alt_range_m", 2.0)))
     p.assumptions = list(fmt.get("assumptions", []))
     if "min_airborne_basis" in fmt:
-        p.assumptions.append(f"A flight needs at least {p.min_airborne_s:g} s in the air and {p.min_alt_range_m:g} m of height "
-                             f"change (approved values for ARJUNA logs: 10 s, 2 m). {fmt['min_airborne_basis']}")
+        p.assumptions.append(f"There is no minimum air time: any recording that gets airborne is analysed as a flight (a log that shows no "
+                             f"movement and under {p.min_alt_range_m:g} m of height change is still treated as a bench test). {fmt['min_airborne_basis']}")
     for f in fmt["fields"]:
         h = col.get(f["from"])
         if h is None or h not in num:

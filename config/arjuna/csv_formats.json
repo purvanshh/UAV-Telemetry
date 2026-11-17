@@ -10,9 +10,9 @@
                   "z_set": ["alt_set", "alt_setpoint"], "tof_h": ["tof_height"], "rc_thr": ["throttle_cmd"]},
       "basis": "Owner-provided column dictionary (2026-11-15) plus repository data checks: accelerometer m/s^2 (|a| = 9.80-9.82 at rest), angles in degrees, time in ms with gyro in deg/s (d(roll)/dt matches gx).",
       "time": {"column": "t_ms", "unit": "ms"},
-      "min_airborne_s": 1.0,
+      "min_airborne_s": 0.0,
       "min_alt_range_m": 0.2,
-      "min_airborne_basis": "FLT recordings are short test hops (about 0.5 m, 1-3 s airborne); the approved 10 s minimum is for full flights. Chosen by the owner on 2026-11-17.",
+      "min_airborne_basis": "FLT recordings are short test hops (about 0.5 m, 1-3 s airborne); there is no minimum air time, so every recording that gets airborne is analysed as a flight. Chosen by the owner.",
       "motor_layout": "unknown",
       "air": {"armed": "armed", "height": ["tof_h", "z_est"], "height_threshold_m": 0.10},
       "rc_map": {"ROLL": 1, "PITCH": 2, "THROTTLE": 3, "YAW": 4},
@@ -90,7 +90,7 @@
       {"to": "arjuna_rc_input.channels[2]", "names": ["rc_thr", "throttle", "throttle_cmd", "rc3"], "kind": "raw"},
       {"to": "arjuna_rc_input.channels[3]", "names": ["rc_yaw", "yaw_cmd", "rc4"], "kind": "raw"}
     ],
-    "min_airborne_s": 10.0,
+    "min_airborne_s": 0.0,
     "min_alt_range_m": 2.0,
     "motor_layout": "unknown",
     "air": {"armed": "arjuna_vehicle_status.armed", "height_threshold_m": 0.30, "motor_threshold": 0.15}

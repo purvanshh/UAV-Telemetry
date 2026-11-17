@@ -39,7 +39,7 @@ def test_flt_is_recognised_and_every_column_is_accounted_for(flt):
     assert {"u1_core", "kill", "aux1"} <= dropped
     assert fl.compatibility["ok"] and fl.integrity["result"] == "verified_up_to"
     assert fl.info["source_format"] == "csv" and fl.info["source_profile"] == "uav_flt_csv"
-    assert fl.info["motor_layout"] == "unknown" and fl.info["min_airborne_s"] == "1"
+    assert fl.info["motor_layout"] == "unknown" and fl.info["min_airborne_s"] == "0"
 
 
 def test_flt_values_are_converted_to_the_standard_units(flt):

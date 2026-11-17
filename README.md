@@ -18,8 +18,8 @@ altitude-loop `arjuna_controller` record from setpoint vs estimate. The conversi
 assumptions, dropped columns) is shown on the page, and both the converted `.ulg` and the original CSV can be
 downloaded.
 
-FLT specifics, decided by the owner: these are short test hops, so a flight needs 1 s in the air and 0.2 m of height
-change (approved values for ARJUNA logs: 10 s and 2 m). Which corner each motor (m1–m4) sits on is unknown, so
+FLT specifics, decided by the owner: these are short test hops, so there is no minimum air time: every recording that gets airborne is
+analysed as a flight (a bench test, with no movement, is still flagged). Which corner each motor (m1–m4) sits on is unknown, so
 motors are named m1–m4 and no position-based conclusion is drawn.
 
 The earlier LSTM "Deep Analysis", the Streamlit app and the separate statistical CSV engine have been removed. They
