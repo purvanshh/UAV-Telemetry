@@ -1,3 +1,3 @@
-"""UAV Sentinel core library — upload, validation, and session helpers."""
+"""ARJUNA core library: ARJUNA log reading, CSV conversion, checks, physics and the analysis agent."""
 
 __version__ = "0.1.0"

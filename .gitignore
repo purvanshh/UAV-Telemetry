@@ -49,3 +49,11 @@ frontend/.env.local
 .ipynb_checkpoints/
 
 data/direct/
+
+# Training data: large, never commit
+dataset/
+ARJUNA_dataset_for_Purvansh/
+
+# Local reference material (PDFs and notes, not part of the repo)
+/*.pdf
+/ARJUNA.md

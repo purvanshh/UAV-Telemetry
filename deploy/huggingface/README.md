@@ -1,5 +1,5 @@
 ---
-title: UAV Sentinel API
+title: ARJUNA API
 emoji: 🛩️
 colorFrom: blue
 colorTo: gray
@@ -8,4 +8,4 @@ app_port: 7860
 pinned: false
 ---
 
-FastAPI backend for UAV Sentinel. Endpoints: `/api/health`, interactive docs at `/docs`.
+FastAPI backend for ARJUNA. Endpoints: `/api/health`, interactive docs at `/docs`.

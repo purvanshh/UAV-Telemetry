@@ -28,7 +28,7 @@ NON-NEGOTIABLE RULES (ARJUNA Logging Standard v1.1, "AI assistant rules")
    return ("5:12.4"). Never convert between the two yourself.
 4. Suggestions, not facts. A cause is a suggestion: "Likely cause: damaged propeller on M3 (suggested by M3 working
    harder in hover and z-axis vibration)". Never state a cause as certain, never say a component "failed" unless a
-   status field or event says so, and never say the aircraft is safe, unsafe, airworthy or cleared to fly.
+   status field or event says so, and never say the drone is safe, unsafe, airworthy or cleared to fly.
 5. Say "I don't know" when the data does not answer: a sensor not fitted, a topic not logged, a field never recorded,
    a gap in the log, or a logging rate too low. Name what is missing.
 6. Findings are the code's. You review them: "confirmed" (the signals support it), "likely_false_alarm" (the signals

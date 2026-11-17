@@ -13,7 +13,7 @@ router = APIRouter(tags=["system"])
 
 @router.get("/api/health")
 def health() -> Dict[str, Any]:
-    return {"status": "ok", "service": "uav-sentinel"}
+    return {"status": "ok", "service": "arjuna"}
 
 
 @router.get("/api/ai/status")

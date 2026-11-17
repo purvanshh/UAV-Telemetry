@@ -1,4 +1,4 @@
-"""UAV Sentinel FastAPI application: Agentic Analysis of ARJUNA flight logs and telemetry CSVs."""
+"""ARJUNA FastAPI application: Agentic Analysis of ARJUNA flight logs and telemetry CSVs."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class QuietLocalModelProbes(logging.Filter):
 
     OpenCode treats anything answering on 127.0.0.1:8000 as vLLM and
     repeatedly requests ``/health`` and ``/v1/models``. Those are not
-    UAV Sentinel routes. ``/api/health`` is left visible.
+    ARJUNA routes. ``/api/health`` is left visible.
     """
 
     _QUIET_PATHS = (
@@ -48,7 +48,7 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="UAV Sentinel API",
+    title="ARJUNA API",
     description="Agentic Analysis of ARJUNA flight logs: code detectors plus an AI investigator",
     version="1.0.0",
     lifespan=_lifespan,
@@ -63,7 +63,7 @@ origins = [o.strip() for o in cors_raw.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    # e.g. r"https://uav-sentinel(-[a-z0-9-]+)?\.vercel\.app" to admit Vercel preview deploys.
+    # e.g. r"https://arjuna(-[a-z0-9-]+)?\.vercel\.app" to admit Vercel preview deploys.
     allow_origin_regex=os.environ.get("CORS_ORIGIN_REGEX") or None,
     allow_credentials=True,
     allow_methods=["*"],
@@ -84,7 +84,7 @@ async def unhandled_exception(_request: Request, exc: Exception) -> JSONResponse
 @app.get("/")
 def root():
     return {
-        "service": "uav-sentinel",
+        "service": "arjuna",
         "docs": "/docs",
         "health": "/api/health",
     }

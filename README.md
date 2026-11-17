@@ -1,4 +1,4 @@
-# UAV Sentinel — Agentic Analysis of ARJUNA flight logs
+# ARJUNA — flight log analysis
 
 Upload an ARJUNA flight log (`flight.ulg`, or a zipped flight folder) and get:
 
