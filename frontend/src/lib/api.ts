@@ -141,6 +141,7 @@ export type ArjunaSummary = {
   metadata?: Record<string, unknown> | null;
   conversion?: Conversion;
   pilot?: PilotView;
+  preflight?: Preflight;
   engineer_labels?: {
     reviewed?: boolean;
     reviewed_by?: string;
@@ -162,6 +163,41 @@ export type PilotProblem = {
   likely_false_alarm: boolean;
   confidence: string;
   also: string[];
+};
+
+export type PreflightCheck = {
+  id: string;
+  label: string;
+  status: "pass" | "check" | "fail" | "unknown";
+  detail: string;
+  action: string;
+  provisional: boolean;
+};
+
+export type Preflight = {
+  status: "ready" | "check" | "not_ready" | "partial" | "unreadable";
+  status_text: string;
+  status_detail: string;
+  checks: PreflightCheck[];
+  actions: string[];
+  caveat?: string;
+};
+
+export type CompareProblem = {
+  code: string;
+  name: string;
+  state: "fixed" | "still" | "better" | "worse" | "new" | "new_unchecked" | "unknown";
+  text: string;
+  evidence: string | null;
+};
+
+export type CompareResult = {
+  status: "fixed" | "partly_fixed" | "not_fixed" | "worse" | "no_problems" | "not_comparable";
+  status_text: string;
+  status_detail: string;
+  problems: CompareProblem[];
+  metrics: { key: string; label: string; unit: string; before: number; after: number; change_pct: number | null; status: "better" | "worse" | "same"; text: string }[];
+  notes: string[];
 };
 
 export type PilotView = {
@@ -256,6 +292,8 @@ export type AnalysisMeta = {
   created_at: string;
   filename: string;
   kind: "ulog";
+  purpose?: "flight" | "preflight";
+  preflight_status?: string | null;
   converted_from?: "csv" | null;
   source_profile?: string | null;
   flight_id?: string | null;
@@ -293,6 +331,15 @@ export type ChartPack = {
   charts: { title: string; unit: string | null; series: { label: string; t: number[]; y: number[] }[] }[];
 };
 
+export type AgentProgress = {
+  running: boolean;
+  step?: "starting" | "thinking" | "tool" | "validating";
+  tool?: string | null;
+  args?: Record<string, unknown>;
+  calls?: number;
+  elapsed_s?: number;
+};
+
 export type AiStatus = { configured: boolean; model: string };
 
 export type PilotForm = { symptom: string; time_ref: string; time_value: string; note: string };
@@ -302,19 +349,49 @@ export const api = {
   aiStatus: () => getJson<AiStatus>("/api/ai/status"),
   list: () => getJson<AnalysisMeta[]>("/api/analyses"),
   get: (id: string) => getJson<AnalysisView>(`/api/analyses/${encodeURIComponent(id)}`),
-  async create(file: File, pilot?: PilotForm | null): Promise<AnalysisView> {
+  /** Upload and analyse. ``onProgress`` gets the share of the file sent (0-1); after that the server runs the checks. */
+  create(
+    file: File,
+    pilot?: PilotForm | null,
+    purpose: "flight" | "preflight" = "flight",
+    onProgress?: (sent: number) => void
+  ): Promise<AnalysisView> {
     const fd = new FormData();
     fd.append("file", file);
+    fd.append("purpose", purpose);
     if (pilot?.symptom) {
       fd.append("symptom", pilot.symptom);
       if (pilot.time_ref) fd.append("time_ref", pilot.time_ref);
       if (pilot.time_value) fd.append("time_value", pilot.time_value);
       if (pilot.note) fd.append("note", pilot.note);
     }
-    const res = await fetch(`${API_URL}/api/analyses`, { method: "POST", body: fd });
-    if (!res.ok) await parseError(res);
-    return res.json() as Promise<AnalysisView>;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_URL}/api/analyses`);
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
+      xhr.upload.onload = () => onProgress?.(1);
+      xhr.onerror = () => reject(new ApiError(0, "The analysis service could not be reached."));
+      xhr.onload = () => {
+        let body: unknown = null;
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          /* not JSON */
+        }
+        if (xhr.status >= 200 && xhr.status < 300) return resolve(body as AnalysisView);
+        const d = (body as { detail?: unknown } | null)?.detail;
+        reject(new ApiError(xhr.status, typeof d === "string" ? d : xhr.statusText || "Upload failed"));
+      };
+      xhr.send(fd);
+    });
   },
+  compare: (before: string, after: string) =>
+    getJson<{
+      before: { analysis_id: string; filename: string; flight_id?: string; created_at: string };
+      after: { analysis_id: string; filename: string; flight_id?: string; created_at: string };
+      result: CompareResult;
+    }>(`/api/analyses/compare?before=${encodeURIComponent(before)}&after=${encodeURIComponent(after)}`),
+  agentProgress: (id: string) => getJson<AgentProgress>(`/api/analyses/${encodeURIComponent(id)}/agent/progress`),
   runAgent: (id: string) => sendJson<AnalysisView>(`/api/analyses/${encodeURIComponent(id)}/agent`, "POST", { consent: true }),
   findingContext: (id: string, fid: string) =>
     getJson<ChartPack>(`/api/analyses/${encodeURIComponent(id)}/findings/${encodeURIComponent(fid)}/context`),
