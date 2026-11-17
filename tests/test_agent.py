@@ -275,3 +275,23 @@ def test_api_rejects_bad_inputs(client):
     refused = client.post("/api/analyses", files={"file": ("x.ulg", flight(info={"frame_nav": "NED"}), "application/octet-stream")}).json()
     assert refused["summary"]["refused"] and client.post(f"/api/analyses/{refused['analysis_id']}/agent",
                                                           json={"consent": True}).status_code == 422
+
+
+def test_agent_reports_each_step_for_the_progress_display(vib):
+    fl, a = vib
+    steps = []
+    runner.investigate(ULogSource(fl), a, a["findings"], client=ScriptedModel(a["findings"]),
+                       on_step=lambda s, d=None: steps.append((s, (d or {}).get("name"))))
+    assert steps[0] == ("tool", "get_flight_overview") and ("thinking", None) in steps
+    assert steps[-1] == ("validating", None) and any(s == ("tool", "signal_stats") for s in steps)
+
+
+def test_progress_registry_and_endpoint(client):
+    from src.agent import progress
+    report = progress.start("an-x")
+    report("tool", {"name": "signal_stats", "args": {"topic": "arjuna_vibration"}})
+    p = progress.get("an-x")
+    assert p["tool"] == "signal_stats" and p["args"]["topic"] == "arjuna_vibration" and p["calls"] == 1
+    progress.finish("an-x")
+    assert progress.get("an-x") is None
+    assert client.get("/api/analyses/an-nothing/agent/progress").json() == {"running": False}

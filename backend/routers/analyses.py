@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from backend.analysis_store import AnalysisNotFound, AnalysisStore
-from src.agent import runner
+from src.agent import progress, runner
 from src.agent.sources import SignalError, ULogSource
 from src.agent.symptoms import PHASES, SYMPTOMS, TIME_REFS
 from src.arjuna.analysis import ANALYSIS_VERSION, analyse
@@ -214,7 +214,12 @@ def run_agent(aid: str, body: AgentRequest) -> Any:
             raise HTTPException(status_code=409, detail="An investigation of this flight is already running.")
         src = _source(st, aid)
         findings = summary.get("findings", [])
-        rep = runner.investigate(src, summary, findings, pilot_report=pilot, input_fingerprint=meta.get("sha256", ""))
+        on_step = progress.start(aid)
+        try:
+            rep = runner.investigate(src, summary, findings, pilot_report=pilot, input_fingerprint=meta.get("sha256", ""),
+                                     on_step=on_step)
+        finally:
+            progress.finish(aid)
         attempt = {"status": rep["status"], "at": datetime.now(timezone.utc).isoformat(), "message": rep.get("message", ""),
                    "model": rep["provenance"].get("model")}
         if rep["status"] in ("ok", "partial") or st.load_report(aid) is None:
@@ -224,6 +229,13 @@ def run_agent(aid: str, body: AgentRequest) -> Any:
     if rep["status"] not in ("ok", "partial"):
         view["last_attempt"] = rep
     return view
+
+
+@router.get("/{aid}/agent/progress")
+def agent_progress(aid: str) -> Dict[str, Any]:
+    """The step the running review is on (``running: false`` when none is running)."""
+    p = progress.get(aid)
+    return {"running": p is not None, **(p or {})}
 
 
 def _decimate(t: np.ndarray, y: np.ndarray, n: int = MAX_POINTS) -> tuple:

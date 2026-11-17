@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.agent import prompt
 from src.agent.sources import Source
@@ -139,7 +139,10 @@ def _pilot_window(pilot: Optional[Dict[str, Any]], analysis: Dict[str, Any], sou
 
 
 def investigate(source: Source, analysis: Dict[str, Any], findings: List[Dict[str, Any]], *,
-                pilot_report: Optional[Dict[str, Any]] = None, client: Any = None, input_fingerprint: str = "") -> Dict[str, Any]:
+                pilot_report: Optional[Dict[str, Any]] = None, client: Any = None, input_fingerprint: str = "",
+                on_step: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None) -> Dict[str, Any]:
+    """``on_step(step, detail)`` is told each step as it starts: "tool" (with name and args), "thinking", "validating"."""
+    step = on_step or (lambda *_: None)
     model = get_model_name()
     kind = source.kind
     pilot = None
@@ -166,6 +169,7 @@ def investigate(source: Source, analysis: Dict[str, Any], findings: List[Dict[st
         pre.append(("match_pilot_report", {}))
     pre_calls, pre_msgs = [], []
     for i, (name, args) in enumerate(pre):
+        step("tool", {"name": name, "args": args})
         ref, out = tb.call(name, args)
         cid = f"call_pre_{i}"
         pre_calls.append({"id": cid, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}})
@@ -189,6 +193,7 @@ def investigate(source: Source, analysis: Dict[str, Any], findings: List[Dict[st
         ready = made >= need and not pending
         # submit_report is withheld until the agent has investigated: every finding examined, minimum calls made.
         late = rounds >= MAX_ROUNDS - 2
+        step("thinking", None)
         kwargs: Dict[str, Any] = {"model": model, "messages": messages, **_params(model)}
         if force:
             kwargs.update(tools=specs, tool_choice={"type": "function", "function": {"name": "submit_report"}},
@@ -241,6 +246,7 @@ def investigate(source: Source, analysis: Dict[str, Any], findings: List[Dict[st
                 raw_report = args
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": '{"ok":true}'})
                 continue
+            step("tool", {"name": name, "args": args})
             _, out = tb.call(name, args)
             content = json.dumps(out, default=str, separators=(",", ":"))
             sent_chars += len(content)
@@ -259,6 +265,7 @@ def investigate(source: Source, analysis: Dict[str, Any], findings: List[Dict[st
                 "message": "The agent did not submit a report within its limits. The code findings are unaffected.",
                 "failure": {"reason": "no_report", "rounds": rounds}}
     ids_source = findings
+    step("validating", None)
     report = validate(raw_report, findings=ids_source, tool_results=tb.results, analysis=analysis)
     partial = bool(report["rejected"]) or bool(report["unreviewed_findings"]) or not report["headline"]
     log.info("agent ok rounds=%d calls=%d rejected=%d unreviewed=%d tokens=%s", rounds, len(tb.calls),
