@@ -1,0 +1,6 @@
+{
+  "note": "Go / no-go limits for the pre-flight check (a short test flight or bench run). Limits marked approved are the triage thresholds Labhesh approved on 2026-11-16 (config/arjuna/thresholds.json). Limits marked provisional are proposals and have not been approved yet.",
+  "battery_rest_cell_v_ok": {"value": 3.7, "status": "provisional", "basis": "A healthy resting 3S-6S LiPo cell reads about 3.7 V or more before take-off. Not yet approved."},
+  "battery_rest_window_s": 3.0,
+  "motors_running_cmd": 0.05
+}

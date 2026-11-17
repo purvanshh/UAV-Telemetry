@@ -21,8 +21,10 @@ from src.agent import runner
 from src.agent.sources import SignalError, ULogSource
 from src.agent.symptoms import PHASES, SYMPTOMS, TIME_REFS
 from src.arjuna.analysis import ANALYSIS_VERSION, analyse
+from src.arjuna.compare import compare as compare_flights
 from src.arjuna.convert import convert_csv
 from src.arjuna.pilot import pilot_view
+from src.arjuna.preflight import preflight_check
 from src.arjuna.ulog import ArjunaFlight, ArjunaFormatError, is_ulog, load_flight
 from src.limits import get_limits
 
@@ -112,7 +114,10 @@ def _view(st: AnalysisStore, aid: str) -> Dict[str, Any]:
 
 @router.post("")
 async def create(file: UploadFile = File(...), symptom: Optional[str] = Form(None), time_ref: Optional[str] = Form(None),
-                 time_value: Optional[str] = Form(None), note: Optional[str] = Form(None)) -> Any:
+                 time_value: Optional[str] = Form(None), note: Optional[str] = Form(None),
+                 purpose: str = Form("flight")) -> Any:
+    if purpose not in ("flight", "preflight"):
+        raise HTTPException(status_code=422, detail="purpose must be 'flight' or 'preflight'.")
     raw = await read_upload_capped(file, get_limits().max_file_bytes)
     name = file.filename or "upload"
     pilot = _pilot(symptom, time_ref, time_value, note)
@@ -131,8 +136,10 @@ async def create(file: UploadFile = File(...), symptom: Optional[str] = Form(Non
     summary = analyse(fl)
     if conversion:
         summary["conversion"] = conversion
+    if purpose == "preflight":
+        summary["preflight"] = preflight_check(fl, summary)
     verdict = summary.get("verdict") or {}
-    meta = {"filename": name, "kind": "ulog", "converted_from": "csv" if conversion else None,
+    meta = {"filename": name, "kind": "ulog", "purpose": purpose, "converted_from": "csv" if conversion else None,
             "source_profile": (conversion or {}).get("format", {}).get("id"), "analysis_version": ANALYSIS_VERSION,
             "sha256": fl.sha256, "flight_id": fl.info.get("flight_id"), "vehicle_id": fl.info.get("vehicle_id"),
             "refused": summary.get("refused", False), "integrity": (summary.get("integrity") or {}).get("result"),
@@ -140,6 +147,7 @@ async def create(file: UploadFile = File(...), symptom: Optional[str] = Form(Non
             "duration_s": fl.duration_s, "airborne_s": (summary.get("classification") or {}).get("airborne_s"),
             "worst": verdict.get("worst"), "critical": verdict.get("critical", 0), "warning": verdict.get("warning", 0),
             "codes": verdict.get("codes", []), "pilot_report": pilot, "agent": None}
+    meta["preflight_status"] = (summary.get("preflight") or {}).get("status")
     aid = st.create(meta=meta, summary=summary, source=ulg, source_name=source_name, extra=extra)
     return _view(st, aid)
 
@@ -147,6 +155,30 @@ async def create(file: UploadFile = File(...), symptom: Optional[str] = Form(Non
 @router.get("")
 def list_analyses() -> List[Dict[str, Any]]:
     return store().list()
+
+
+def _with_metrics(st: AnalysisStore, aid: str) -> Dict[str, Any]:
+    """The stored analysis; an older one without comparable measurements is re-analysed from its stored log."""
+    summary = st.load_summary(aid)
+    if "key_metrics" not in summary and not summary.get("refused"):
+        conv = summary.get("conversion")
+        summary = analyse(_flight(st, aid))
+        if conv:
+            summary["conversion"] = conv
+    return summary
+
+
+@router.get("/compare")
+def compare_endpoint(before: str, after: str) -> Any:
+    """Fix check and flight comparison: ``before`` is the earlier flight, ``after`` the later one."""
+    st = store()
+    try:
+        a, b = _with_metrics(st, before), _with_metrics(st, after)
+        ma, mb = st.load_meta(before), st.load_meta(after)
+    except AnalysisNotFound as exc:
+        raise _nf(exc) from exc
+    brief = lambda m: {k: m.get(k) for k in ("analysis_id", "filename", "flight_id", "vehicle_id", "created_at", "worst", "purpose")}  # noqa: E731
+    return {"before": brief(ma), "after": brief(mb), "result": compare_flights(a, b)}
 
 
 @router.get("/{aid}")

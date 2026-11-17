@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from src.arjuna.metrics import key_metrics
 from src.arjuna.checks import FAULT_CODES, SEV_RANK, _r, clock, run_checks, worst_severity
 from src.arjuna.physics import run_physics
 from src.arjuna.ulog import ArjunaFlight, enum_name
@@ -123,7 +124,7 @@ def analyse(fl: ArjunaFlight) -> Dict[str, Any]:
     for i, f in enumerate(findings, 1):
         f["id"] = f"F{i}"
     sev = worst_severity(findings)
-    return {
+    out = {
         "analysis_version": ANALYSIS_VERSION, "kind": "ulog", "refused": False,
         "file": {"name": fl.filename, "sha256": fl.sha256, "size_bytes": fl.size_bytes, "folder_files": fl.folder_files},
         "identity": {k: fl.info.get(k) for k in IDENTITY_KEYS if k in fl.info},
@@ -136,6 +137,8 @@ def analyse(fl: ArjunaFlight) -> Dict[str, Any]:
                     "codes": sorted({f["code"] for f in findings})},
         "metadata": fl.metadata, "engineer_labels": _labels(fl),
     }
+    out["key_metrics"] = key_metrics(fl, out)
+    return out
 
 
 def _labels(fl: ArjunaFlight) -> Optional[Dict[str, Any]]:
